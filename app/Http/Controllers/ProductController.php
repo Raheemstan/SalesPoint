@@ -3,64 +3,65 @@
 namespace App\Http\Controllers;
 
 use App\Models\Product;
-use App\Http\Requests\StoreProductRequest;
-use App\Http\Requests\UpdateProductRequest;
+use App\Models\Category;
+use Illuminate\Http\Request;
 
 class ProductController extends Controller
 {
-    /**
-     * Display a listing of the resource.
-     */
-    public function index()
+    public function index(Request $request)
     {
-        //
+        $products = Product::with('category')
+            ->when(
+                $request->search,
+                fn($q) =>
+                $q->where('name', 'like', "%{$request->search}%")
+                    ->orWhere('sku', 'like', "%{$request->search}%")
+                    ->orWhere('barcode', 'like', "%{$request->search}%")
+            )
+            ->orderBy('name')
+            ->paginate(10);
+
+        $categories = Category::orderBy('name')->get();
+
+        return view('products.index', compact('products', 'categories'));
     }
 
-    /**
-     * Show the form for creating a new resource.
-     */
-    public function create()
+    public function store(Request $request)
     {
-        //
+        $validated = $request->validate($this->rules());
+
+        Product::create($validated);
+
+        return back()->with('success', 'Product added successfully.');
     }
 
-    /**
-     * Store a newly created resource in storage.
-     */
-    public function store(StoreProductRequest $request)
+    public function update(Request $request, Product $product)
     {
-        //
+        $validated = $request->validate($this->rules($product->id));
+
+        $product->update($validated);
+
+        return back()->with('success', 'Product updated successfully.');
     }
 
-    /**
-     * Display the specified resource.
-     */
-    public function show(Product $product)
-    {
-        //
-    }
-
-    /**
-     * Show the form for editing the specified resource.
-     */
-    public function edit(Product $product)
-    {
-        //
-    }
-
-    /**
-     * Update the specified resource in storage.
-     */
-    public function update(UpdateProductRequest $request, Product $product)
-    {
-        //
-    }
-
-    /**
-     * Remove the specified resource from storage.
-     */
     public function destroy(Product $product)
     {
-        //
+        $product->delete();
+
+        return back()->with('success', 'Product deleted successfully.');
+    }
+
+    private function rules($id = null): array
+    {
+        return [
+            'name'           => 'required|string|max:255',
+            'sku'            => 'nullable|string|max:100|unique:products,sku,' . $id,
+            'barcode'        => 'nullable|string|max:100|unique:products,barcode,' . $id,
+            'category_id'    => 'nullable|exists:categories,id',
+            'cost_price'     => 'required|numeric|min:0',
+            'sale_price'     => 'required|numeric|min:0',
+            'stock_quantity' => 'required|integer|min:0',
+            'status'         => 'required|in:active,inactive',
+        ];
     }
 }
