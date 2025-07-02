@@ -5,6 +5,15 @@
 @section('content')
 
     <div x-data="{ addModal: false, editModal: false, editProduct: {} }">
+        @if ($errors->any())
+            <div class="bg-red-100 text-red-700 px-4 py-2 rounded mb-3">
+                <ul class="list-disc ml-5">
+                    @foreach ($errors->all() as $error)
+                        <li>{{ $error }}</li>
+                    @endforeach
+                </ul>
+            </div>
+        @endif
 
         {{-- Header --}}
         <div class="flex justify-between items-center mb-4">
@@ -45,7 +54,7 @@
                                 {!! $product->stock_quantity <= 5 ? '<span class="text-red-500">(Low)</span>' : '' !!}
                             </td>
                             <td class="px-4 py-2">₦{{ number_format($product->sale_price, 2) }}</td>
-                            
+
                             <td class="px-4 py-2 flex gap-2">
                                 {{-- Edit Button --}}
                                 <button @click="editModal = true; editProduct = {{ $product->toJson() }}"

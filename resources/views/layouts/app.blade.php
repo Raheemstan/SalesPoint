@@ -28,6 +28,11 @@
     <title>SalesPoint - @yield('title', 'Dashboard')</title>
 
 
+    {{-- Tailwind CSS CDN (Replace with Laravel Mix if preferred) --}}
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    {{-- Optional: AlpineJS for interactivity --}}
+    <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
     <script defer src="{{ asset('alpine.js') }}"></script>
     <script defer src="{{ asset('tailwindcdn.js') }}"></script>
     
@@ -61,11 +66,35 @@
                             📂 Categories
                         </a>
                     </li>
-                    <li>
-                        <a href="{{ route('reports.sales') }}"
-                            class="block px-4 py-2 rounded hover:bg-blue-100 dark:hover:bg-blue-900 {{ request()->routeIs('reports.*') ? 'bg-blue-50 dark:bg-blue-900 font-semibold' : '' }}">
+                    <li x-data="{ open: false }" class="relative">
+                        <button @click="open = !open"
+                            class="flex items-center justify-between w-full px-4 py-2 rounded hover:bg-blue-100 dark:hover:bg-blue-900 {{ request()->routeIs('reports.*') ? 'bg-blue-50 dark:bg-blue-900 font-semibold' : '' }}">
                             📊 Reports
-                        </a>
+                            <svg class="w-4 h-4 ml-2 transition-transform" :class="{ 'rotate-180': open }" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                            </svg>
+                        </button>
+                        <ul x-show="open" @click.away="open = false" x-transition
+                            class="absolute left-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded shadow-lg z-10 border dark:border-gray-700">
+                            <li>
+                                <a href="{{ route('reports.sales') }}"
+                                    class="block px-4 py-2 hover:bg-blue-100 dark:hover:bg-blue-900 {{ request()->routeIs('reports.sales') ? 'bg-blue-50 dark:bg-blue-900 font-semibold' : '' }}">
+                                    Sales Report
+                                </a>
+                            </li>
+                            <li>
+                                <a href="{{ route('reports.daily') }}"
+                                    class="block px-4 py-2 hover:bg-blue-100 dark:hover:bg-blue-900 {{ request()->routeIs('reports.daily') ? 'bg-blue-50 dark:bg-blue-900 font-semibold' : '' }}">
+                                    Daily Summary
+                                </a>
+                            </li>
+                            {{-- <li>
+                                <a href="{{ route('reports.expenses') }}"
+                                    class="block px-4 py-2 hover:bg-blue-100 dark:hover:bg-blue-900 {{ request()->routeIs('reports.expenses') ? 'bg-blue-50 dark:bg-blue-900 font-semibold' : '' }}">
+                                    Expense Report
+                                </a>
+                            </li> --}}
+                        </ul>
                     </li>
                     <li>
                         <a href="{{ route('settings.index') }}"

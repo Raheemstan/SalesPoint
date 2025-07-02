@@ -30,6 +30,11 @@ Route::middleware('auth')->group(function () {
     Route::resource('purchases', PurchaseController::class);
     Route::resource('expenses', ExpenseController::class);
     Route::get('reports/sales', [ReportController::class, 'index'])->name('reports.sales');
+    Route::get('report/sales/pdf', [ReportController::class, 'exportPDF'])->name('sales.report.pdf');
+    Route::get('report/sales/csv', [ReportController::class, 'exportCSV'])->name('sales.report.csv');
+    Route::get('/reports/daily', [ReportController::class, 'dailySales'])->name('reports.daily');
+    Route::get('reports/movement', [ReportController::class, 'movement'])->name('reports.movement');
+
     Route::get('settings', [SettingController::class, 'index'])->name('settings.index');
     Route::post('settings', [SettingController::class, 'update'])->name('settings.update');
 

@@ -130,48 +130,48 @@ class POSController extends Controller
 
         DB::transaction(function () use ($cart, $total, $tax, $discount, $grandTotal, $paymentMethod, $paid, $change, &$saleId) {
             $sale = Sale::create([
-            'invoice_number' => 'INV-' . time(),
-            'user_id' => auth()->id(),
-            'total_amount' => $total,
-            'tax_amount' => $tax,
-            'discount_amount' => $discount,
-            'grand_total' => $grandTotal,
-            'payment_method' => $paymentMethod,
-            'paid_amount' => $paid,
-            'change_due' => $change,
-            'sale_date' => now(),
+                'invoice_number' => 'INV-' . time(),
+                'user_id' => auth()->id(),
+                'total_amount' => $total,
+                'tax_amount' => $tax,
+                'discount_amount' => $discount,
+                'grand_total' => $grandTotal,
+                'payment_method' => $paymentMethod,
+                'paid_amount' => $paid,
+                'change_due' => $change,
+                'sale_date' => now(),
             ]);
 
             $saleId = $sale->id;
 
             foreach ($cart as $item) {
-            SaleItem::create([
-                'sale_id' => $sale->id,
-                'product_id' => $item['product_id'],
-                'quantity' => $item['quantity'],
-                'price' => $item['price'],
-                'total' => $item['price'] * $item['quantity'],
-            ]);
-
-            $product = Product::find($item['product_id']);
-            if ($product) {
-                $product->decrement('stock_quantity', $item['quantity']);
-
-                InventoryLog::create([
-                'product_id' => $product->id,
-                'user_id' => auth()->id(),
-                'type' => 'OUT',
-                'quantity' => $item['quantity'],
-                'reason' => 'Sale',
+                SaleItem::create([
+                    'sale_id' => $sale->id,
+                    'product_id' => $item['product_id'],
+                    'quantity' => $item['quantity'],
+                    'price' => $item['price'],
+                    'total' => $item['price'] * $item['quantity'],
                 ]);
-            }
+
+                $product = Product::find($item['product_id']);
+                if ($product) {
+                    $product->decrement('stock_quantity', $item['quantity']);
+
+                    InventoryLog::create([
+                        'product_id' => $product->id,
+                        'user_id' => auth()->id(),
+                        'type' => 'OUT',
+                        'quantity' => $item['quantity'],
+                        'reason' => 'Sale',
+                    ]);
+                }
             }
 
             AuditLog::create([
-            'user_id' => auth()->id(),
-            'action' => 'Created Sale',
-            'table_name' => 'sales',
-            'record_id' => $sale->id,
+                'user_id' => auth()->id(),
+                'action' => 'Created Sale',
+                'table_name' => 'sales',
+                'record_id' => $sale->id,
             ]);
 
             session()->forget('cart');
@@ -181,17 +181,17 @@ class POSController extends Controller
     }
 
     public function searchProducts(Request $request)
-{
-    $search = $request->query('q');
+    {
+        $search = $request->query('q');
 
-    $products = Product::where('name', 'like', "%$search%")
-                ->orWhere('sku', 'like', "%$search%")
-                ->orWhere('barcode', 'like', "%$search%")
-                ->limit(30)
-                ->get();
+        $products = Product::where('name', 'like', "%$search%")
+            ->orWhere('sku', 'like', "%$search%")
+            ->orWhere('barcode', 'like', "%$search%")
+            ->limit(30)
+            ->get();
 
-    return response()->json($products);
-}
+        return response()->json($products);
+    }
 
 
     /**
