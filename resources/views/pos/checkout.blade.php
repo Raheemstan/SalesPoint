@@ -60,12 +60,8 @@
     <table>
         @foreach($sale->items as $item)
             <tr>
-                <td>
-                    {{ $item->product->name }} (x{{ $item->quantity }})
-                </td>
-                <td style="text-align: right;">
-                    ₦{{ number_format($item->price * $item->quantity, 2) }}
-                </td>
+                <td>{{ $item->product->name }} (x{{ $item->quantity }})</td>
+                <td style="text-align: right;">₦{{ number_format($item->price * $item->quantity, 2) }}</td>
             </tr>
         @endforeach
     </table>
@@ -80,11 +76,11 @@
         </tr>
         <tr>
             <td>Tax:</td>
-            <td style="text-align: right;">₦{{ number_format($sale->tax, 2) }}</td>
+            <td style="text-align: right;">₦{{ number_format($sale->tax_amount, 2) }}</td>
         </tr>
         <tr>
             <td>Discount:</td>
-            <td style="text-align: right;">₦{{ number_format($sale->discount, 2) }}</td>
+            <td style="text-align: right;">₦{{ number_format($sale->discount_amount, 2) }}</td>
         </tr>
         <tr class="bold">
             <td>Total:</td>
@@ -96,7 +92,7 @@
 
     {{-- Payment Info --}}
     <p>Payment Method: <strong>{{ ucfirst($sale->payment_method) }}</strong></p>
-    <p>Date: {{ $sale->created_at->format('d M Y, h:i A') }}</p>
+    <p>Date: {{ $sale->sale_date }}</p>
 
     <div class="line"></div>
 

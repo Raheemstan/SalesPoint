@@ -15,9 +15,6 @@ Route::get('/', function () {
     return redirect(route('pos.index'));
 });
 
-Route::get('/dashboard', function () {
-    return view('dashboard');
-})->middleware(['auth', 'verified'])->name('dashboard');
 
 Route::middleware('auth')->group(function () {
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
@@ -33,6 +30,7 @@ Route::middleware('auth')->group(function () {
     Route::get('report/sales/pdf', [ReportController::class, 'exportPDF'])->name('sales.report.pdf');
     Route::get('report/sales/csv', [ReportController::class, 'exportCSV'])->name('sales.report.csv');
     Route::get('/reports/daily', [ReportController::class, 'dailySales'])->name('reports.daily');
+    Route::get('/dashboard', [ReportController::class, 'dailySales'])->name('dashboard');
     Route::get('reports/movement', [ReportController::class, 'movement'])->name('reports.movement');
 
     Route::get('settings', [SettingController::class, 'index'])->name('settings.index');

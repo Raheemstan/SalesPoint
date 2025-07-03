@@ -43,7 +43,9 @@
         {{-- Sidebar --}}
         <aside class="bg-white dark:bg-gray-800 w-64 shadow-md flex flex-col">
             <div class="p-4 text-center border-b dark:border-gray-700">
-                <img src="{{ asset('logo.png') }}" alt="Company Logo" class="mx-auto mb-2">
+                <a href="{{ route('dashboard') }}">
+                    <img src="{{ asset('logo.png') }}" alt="Company Logo" class="mx-auto mb-2">
+                </a>
             </div>
 
             <nav class="flex-1 p-4">
