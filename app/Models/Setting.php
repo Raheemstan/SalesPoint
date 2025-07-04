@@ -11,6 +11,7 @@ class Setting extends Model
 
 
     protected $fillable = ['key', 'value'];
+    public $timestamps = false;
 
     public static function get($key, $default = null)
     {

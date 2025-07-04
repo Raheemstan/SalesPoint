@@ -17,6 +17,7 @@ return new class extends Migration
             $table->string('action');
             $table->string('table_name');
             $table->bigInteger('record_id');
+            $table->ipAddress('ip_address')->nullable();
             $table->timestamps();
         });
     }

@@ -33,8 +33,16 @@ Route::middleware('auth')->group(function () {
     Route::get('/dashboard', [ReportController::class, 'dailySales'])->name('dashboard');
     Route::get('reports/movement', [ReportController::class, 'movement'])->name('reports.movement');
 
-    Route::get('settings', [SettingController::class, 'index'])->name('settings.index');
-    Route::post('settings', [SettingController::class, 'update'])->name('settings.update');
+
+    Route::prefix('settings')->name('settings.')->group(function () {
+        Route::get('/', [SettingController::class, 'index'])->name('index');
+        Route::post('/', [SettingController::class, 'update'])->name('update');
+        Route::get('users', [SettingController::class, 'index'])->name('users.index');
+        Route::post('users', [SettingController::class, 'createUser'])->name('users.create');
+        Route::delete('users/{user}', [SettingController::class, 'deleteUser'])->name('users.delete')->middleware('role:admin');
+        Route::post('/backup/download', [SettingController::class, 'downloadBackup'])->name('backup.download');
+        Route::get('/backup/export/{table}', [SettingController::class, 'exportCsv'])->name('backup.export');
+    })->middleware(['role:admin|manager']);
 
     Route::prefix('pos')->name('pos.')->group(function () {
         Route::get('/', [POSController::class, 'index'])->name('index');

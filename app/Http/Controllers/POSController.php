@@ -141,6 +141,7 @@ class POSController extends Controller
         $tax = $request->tax ?? 0;
         $discount = $request->discount ?? 0;
         $grandTotal = ($total + $tax) - $discount;
+        $ip = $request->ip();
         $change = $paid - $grandTotal;
 
         if ($paid < $grandTotal) {
@@ -148,10 +149,10 @@ class POSController extends Controller
         }
         $saleId = null;
 
-        DB::transaction(function () use ($product, $cart, $total, $tax, $discount, $grandTotal, $paymentMethod, $paid, $change, &$saleId) {
+        DB::transaction(function () use ($ip, $product, $cart, $total, $tax, $discount, $grandTotal, $paymentMethod, $paid, $change, &$saleId) {
             $sale = Sale::create([
                 'invoice_number' => 'INV-' . time(),
-                'user_id' => auth()->id(),
+                'user_id' => userId(),
                 'total_amount' => $total,
                 'tax_amount' => $tax,
                 'discount_amount' => $discount,
@@ -177,7 +178,7 @@ class POSController extends Controller
 
                 InventoryLog::create([
                     'product_id' => $product->id,
-                    'user_id' => auth()->id(),
+                    'user_id' => userId(),
                     'type' => 'OUT',
                     'quantity' => $item['quantity'],
                     'reason' => 'Sale',
@@ -185,10 +186,11 @@ class POSController extends Controller
             }
 
             AuditLog::create([
-                'user_id' => auth()->id(),
+                'user_id' => userId(),
                 'action' => 'Created Sale',
                 'table_name' => 'sales',
                 'record_id' => $sale->id,
+                'ip_address' => $ip,
             ]);
 
             session()->forget('cart');
@@ -215,8 +217,6 @@ class POSController extends Controller
     /**
      * Print Receipt
      */
-    use Mike42\Escpos\Printer;
-    use Mike42\Escpos\PrintConnectors\WindowsPrintConnector;
 
     public function printReceipt($id)
     {
