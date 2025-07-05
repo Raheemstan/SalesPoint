@@ -4,11 +4,12 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Purchase extends Model
 {
     /** @use HasFactory<\Database\Factories\PurchaseFactory> */
-    use HasFactory;
+    use HasFactory, SoftDeletes;
 
 
     protected $fillable = [
@@ -16,7 +17,8 @@ class Purchase extends Model
         'supplier_id',
         'user_id',
         'total_amount',
-        'purchase_date'
+        'purchase_date',
+        'note'
     ];
 
     public function supplier()

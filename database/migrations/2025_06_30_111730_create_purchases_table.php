@@ -18,7 +18,9 @@ return new class extends Migration
             $table->foreignId('user_id')->constrained();
             $table->decimal('total_amount', 15, 2);
             $table->timestamp('purchase_date')->useCurrent();
+            $table->text('note')->nullable();
             $table->timestamps();
+            $table->softDeletes();
         });
     }
 

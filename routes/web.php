@@ -24,7 +24,15 @@ Route::middleware('auth')->group(function () {
     Route::resource('products', ProductController::class)->except(['show', 'create', 'edit']);
     Route::resource('categories', CategoryController::class)->except(['show', 'create', 'edit']);
     Route::resource('suppliers', SupplierController::class);
-    Route::resource('purchases', PurchaseController::class);
+
+    Route::prefix('purchases')->name('purchases.')->group(function () {
+        Route::get('/', [PurchaseController::class, 'index'])->name('index');
+        Route::get('/create', [PurchaseController::class, 'create'])->name('create');
+        Route::post('/', [PurchaseController::class, 'store'])->name('store');
+        Route::get('/{purchase}/edit', [PurchaseController::class, 'edit'])->name('edit');
+        Route::get('/{purchase}', [PurchaseController::class, 'show'])->name('show');
+        Route::delete('/{purchase}', [PurchaseController::class, 'destroy'])->name('destroy');
+    });
 
     Route::get('reports/sales', [ReportController::class, 'index'])->name('reports.sales');
     Route::get('report/sales/pdf', [ReportController::class, 'exportPDF'])->name('sales.report.pdf');

@@ -30,6 +30,7 @@
 
     {{-- Tailwind CSS CDN (Replace with Laravel Mix if preferred) --}}
     <script src="https://cdn.tailwindcss.com"></script>
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
 
     {{-- Optional: AlpineJS for interactivity --}}
     <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
@@ -72,6 +73,12 @@
                         <a href="{{ route('expenses.index') }}"
                             class="block px-4 py-2 rounded hover:bg-blue-100 dark:hover:bg-blue-900 {{ request()->routeIs('expenses.*') ? 'bg-blue-50 dark:bg-blue-900 font-semibold' : '' }}">
                             💰 Expenses
+                        </a>
+                    </li>
+                    <li>
+                        <a href="{{ route('purchases.index') }}"
+                            class="block px-4 py-2 rounded hover:bg-blue-100 dark:hover:bg-blue-900 {{ request()->routeIs('purchases.*') ? 'bg-blue-50 dark:bg-blue-900 font-semibold' : '' }}">
+                            🛍️ Purchases
                         </a>
                     </li>
                     <li x-data="{ open: false }" class="relative">
@@ -152,6 +159,8 @@
         </div>
     </div>
 
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 </body>
 
 <footer>
