@@ -22,10 +22,10 @@ class ProductFactory extends Factory
             'sku' => $this->faker->unique()->bothify('SKU-###'),
             'barcode' => $this->faker->unique()->ean13(),
             'category_id' => Category::factory()->create()->id,
-            'purchase_price' => $this->faker->randomFloat(2, 1, 100),
+            'cost_price' => $this->faker->randomFloat(2, 1, 100),
             'sale_price' => $this->faker->randomFloat(2, 1, 200),
             'stock_quantity' => $this->faker->numberBetween(0, 1000),
-            'description' => $this->faker->sentence(),
+            
         ];
     }
 }

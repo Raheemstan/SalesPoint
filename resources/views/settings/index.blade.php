@@ -24,17 +24,19 @@
                 <h3 class="text-lg font-bold mb-2">Business Info</h3>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <x-input name="store_name" label="Store Name" :value="setting('store_name')" />
-                    <x-input name="phone" label="Phone Number" :value="setting('phone')" />
-                    <x-input name="email" label="Email" :value="setting('email')" />
-                    <x-input name="address" label="Business Address" :value="setting('address')" />
+                    <x-input name="store_phone" label="Phone Number" :value="setting('store_phone')" />
+                    <x-input name="store_motto" label="Store Motto" :value="setting('store_motto')" />
+                    <x-input name="email" label="Email" :value="setting('store_email')" />
+                    <x-input name="store_address" label="Business Address" :value="setting('store_address')" />
                     <div>
                         <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Logo</label>
-                        <input type="file" name="logo" accept="image/*" id="logo-input"
-                            class="mt-1 block w-full text-sm text-gray-800 dark:text-gray-200">
+                        <input type="file" name="store_logo" accept="image/*" id="logo-input"
+                            class="form form-control mt-1 block w-full text-sm text-gray-800 dark:text-gray-200 ">
 
                         {{-- Preview --}}
                         <div class="mt-2">
-                            <img id="logo-preview" src="{{ setting('logo') ? asset('storage/' . setting('logo')) : '' }}"
+                            <img id="logo-preview"
+                                src="{{ setting('store_logo') ? asset('storage/' . setting('store_logo')) : '' }}"
                                 class="h-24 w-auto max-w-[60px] object-contain" alt="">
                         </div>
                     </div>
@@ -87,10 +89,10 @@
                     Save Settings
                 </button>
             </div>{{-- Users --}}
-<div class="tab-content hidden" id="tab-users">
-    <h3 class="text-lg font-bold mb-2">User Management</h3>
-    @include('settings.users')
-</div>
+            <div class="tab-content hidden" id="tab-users">
+                <h3 class="text-lg font-bold mb-2">User Management</h3>
+                @include('settings.users')
+            </div>
 
         </form>
 

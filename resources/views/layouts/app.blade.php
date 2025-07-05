@@ -35,7 +35,7 @@
     <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
     <script defer src="{{ asset('alpine.js') }}"></script>
     <script defer src="{{ asset('tailwindcdn.js') }}"></script>
-    
+
 </head>
 
 <body class="bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
@@ -68,12 +68,20 @@
                             📂 Categories
                         </a>
                     </li>
+                    <li>
+                        <a href="{{ route('expenses.index') }}"
+                            class="block px-4 py-2 rounded hover:bg-blue-100 dark:hover:bg-blue-900 {{ request()->routeIs('expenses.*') ? 'bg-blue-50 dark:bg-blue-900 font-semibold' : '' }}">
+                            💰 Expenses
+                        </a>
+                    </li>
                     <li x-data="{ open: false }" class="relative">
                         <button @click="open = !open"
                             class="flex items-center justify-between w-full px-4 py-2 rounded hover:bg-blue-100 dark:hover:bg-blue-900 {{ request()->routeIs('reports.*') ? 'bg-blue-50 dark:bg-blue-900 font-semibold' : '' }}">
                             📊 Reports
-                            <svg class="w-4 h-4 ml-2 transition-transform" :class="{ 'rotate-180': open }" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                            <svg class="w-4 h-4 ml-2 transition-transform" :class="{ 'rotate-180': open }" fill="none"
+                                stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M19 9l-7 7-7-7" />
                             </svg>
                         </button>
                         <ul x-show="open" @click.away="open = false" x-transition

@@ -229,9 +229,10 @@ class POSController extends Controller
             $printer = new Printer($connector);
 
             $printer->setJustification(Printer::JUSTIFY_CENTER);
-            $printer->text("SalesPoint POS\n");
-            $printer->text("123 Business Street, Nigeria\n");
-            $printer->text("Phone: +234 800 000 0000\n");
+            $printer->text(setting('store_name', 'SalesPoint POS') . "\n");
+            $printer->text(setting('store_motto', 'Your Trusted Store') . "\n");
+            $printer->text(setting('store_address', '123 Business Street, Nigeria') . "\n");
+            $printer->text("Phone: " . setting('store_phone', '+234 800 000 0000') . "\n");
             $printer->feed();
 
             $printer->setJustification(Printer::JUSTIFY_LEFT);

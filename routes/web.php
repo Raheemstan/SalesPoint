@@ -25,7 +25,7 @@ Route::middleware('auth')->group(function () {
     Route::resource('categories', CategoryController::class)->except(['show', 'create', 'edit']);
     Route::resource('suppliers', SupplierController::class);
     Route::resource('purchases', PurchaseController::class);
-    Route::resource('expenses', ExpenseController::class);
+
     Route::get('reports/sales', [ReportController::class, 'index'])->name('reports.sales');
     Route::get('report/sales/pdf', [ReportController::class, 'exportPDF'])->name('sales.report.pdf');
     Route::get('report/sales/csv', [ReportController::class, 'exportCSV'])->name('sales.report.csv');
@@ -33,6 +33,12 @@ Route::middleware('auth')->group(function () {
     Route::get('/dashboard', [ReportController::class, 'dailySales'])->name('dashboard');
     Route::get('reports/movement', [ReportController::class, 'movement'])->name('reports.movement');
 
+    Route::prefix('expenses')->name('expenses.')->group(function () {
+        Route::get('/', [ExpenseController::class, 'index'])->name('index');
+        Route::post('/', [ExpenseController::class, 'store'])->name('store');
+        Route::put('/{expense}', [ExpenseController::class, 'update'])->name('update');
+        Route::delete('/{expense}', [ExpenseController::class, 'destroy'])->name('destroy');
+    })->middleware(['role:admin|manager']);
 
     Route::prefix('settings')->name('settings.')->group(function () {
         Route::get('/', [SettingController::class, 'index'])->name('index');

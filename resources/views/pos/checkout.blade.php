@@ -48,10 +48,10 @@
     {{-- Header --}}
     <div class="center">
         <img src="/logo.png" alt="Logo" class="logo">
-        <div class="bold" style="font-size: 14px;">SalesPoint POS</div>
-        <div style="font-size: 11px;">Simple POS. Smart Business.</div>
-        <div style="font-size: 11px;">123 Business Street, Nigeria</div>
-        <div style="font-size: 11px;">Phone: +234 800 000 0000</div>
+        <div class="bold" style="font-size: 14px;"> {{ setting('store_name', 'SalesPoint POS') }} </div>
+        <div style="font-size: 11px;"> {{ setting('store_motto', 'Simple POS. Smart Business.') }} </div>
+        <div style="font-size: 11px;"> {{ setting('store_address', '123 Business Street, Nigeria') }} </div>
+        <div style="font-size: 11px;">Phone: {{ setting('store_phone', '+234 800 000 0000') }}</div>
     </div>
 
     <div class="line"></div>
@@ -112,9 +112,7 @@
         window.location.href = "{{ route('pos.index') }}";
     };
 
-    // Fallback for browsers where onafterprint doesn't work reliably
     window.addEventListener('focus', function () {
-        // Check if print dialog was opened and now user is back to page
         if (window.printed === undefined) {
             window.printed = true;
         } else {

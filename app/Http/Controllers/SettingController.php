@@ -27,6 +27,7 @@ class SettingController extends Controller
             'store_logo' => 'nullable|image|mimes:jpeg,png,jpg|max:5120',
             'store_address' => 'nullable|string|max:255',
             'store_phone' => 'nullable|string|max:255',
+            'store_motto' => 'nullable|string|max:255',
             'receipt_logo_enabled' => 'nullable|in:1,0',
             'print_method' => 'nullable|in:dom,escpos',
             'theme' => 'nullable|in:light,dark,system',
