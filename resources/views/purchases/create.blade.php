@@ -12,12 +12,6 @@
             </button>
         </div>
 
-        {{-- Flash Messages --}}
-        @if(session('success'))
-            <div class="bg-green-100 text-green-800 p-2 rounded">{{ session('success') }}</div>
-        @elseif(session('error'))
-            <div class="bg-red-100 text-red-800 p-2 rounded">{{ session('error') }}</div>
-        @endif
 
         {{-- Purchase Form --}}
         <form method="POST" action="{{ route('purchases.store') }}">

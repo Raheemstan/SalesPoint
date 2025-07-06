@@ -34,12 +34,16 @@ Route::middleware('auth')->group(function () {
         Route::delete('/{purchase}', [PurchaseController::class, 'destroy'])->name('destroy');
     });
 
-    Route::get('reports/sales', [ReportController::class, 'index'])->name('reports.sales');
-    Route::get('report/sales/pdf', [ReportController::class, 'exportPDF'])->name('sales.report.pdf');
-    Route::get('report/sales/csv', [ReportController::class, 'exportCSV'])->name('sales.report.csv');
-    Route::get('/reports/daily', [ReportController::class, 'dailySales'])->name('reports.daily');
     Route::get('/dashboard', [ReportController::class, 'dailySales'])->name('dashboard');
-    Route::get('reports/movement', [ReportController::class, 'movement'])->name('reports.movement');
+
+    Route::prefix('reports')->name('reports.')->group(function () {
+        Route::get('/sales', [ReportController::class, 'index'])->name('sales');
+        Route::get('/sales/pdf', [ReportController::class, 'exportPDF'])->name('sales.report.pdf');
+        Route::get('/sales/csv', [ReportController::class, 'exportCSV'])->name('sales.report.csv');
+        Route::get('/daily', [ReportController::class, 'dailySales'])->name('daily');
+        Route::get('/movement', [ReportController::class, 'movement'])->name('movement');
+        Route::get('/profit-loss', [ReportController::class, 'profitLoss'])->name('profit_loss');
+    })->middleware(['role:admin|manager']);
 
     Route::prefix('expenses')->name('expenses.')->group(function () {
         Route::get('/', [ExpenseController::class, 'index'])->name('index');

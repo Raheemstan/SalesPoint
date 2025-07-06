@@ -4,13 +4,6 @@
 
 @section('content')
     <div class="bg-white dark:bg-gray-800 shadow rounded p-4">
-
-        {{-- Flash notice --}}
-        @if(session('success'))
-            <div class="mb-4 p-3 rounded text-sm bg-green-100 text-green-800">
-                {{ session('success') }}
-            </div>
-        @endif
         {{-- Header --}}
         <div class="flex flex-col md:flex-row justify-between md:items-center mb-4 gap-4">
             <form method="GET" class="flex flex-wrap items-center gap-2 text-sm">

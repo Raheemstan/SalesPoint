@@ -2,10 +2,15 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Expense;
 use App\Models\Product;
+use App\Models\Purchase;
+use App\Models\PurchaseItem;
 use App\Models\Sale;
 use Barryvdh\DomPDF\Facade\Pdf;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class ReportController extends Controller
 {
@@ -112,5 +117,64 @@ class ReportController extends Controller
         };
 
         return response()->stream($callback, 200, $headers);
+    }
+
+    public function profitLoss(Request $request)
+    {
+        $from = $request->get('from', Carbon::now()->startOfMonth()->toDateString());
+        $to = $request->get('to', Carbon::now()->endOfMonth()->toDateString());
+
+        $start = Carbon::parse($from);
+        $end = Carbon::parse($to);
+
+        $labels = [];
+        $salesData = [];
+        $purchasesData = [];
+        $expensesData = [];
+        $netProfitData = [];
+
+        while ($start->lte($end)) {
+            $date = $start->toDateString();
+            $labels[] = $date;
+
+            $sales = Sale::whereDate('created_at', $date)->sum('total_amount');
+            $purchases = Purchase::whereDate('purchase_date', $date)->sum('total_amount');
+            $expenses = Expense::whereDate('expense_date', $date)->sum('amount');
+            $netProfit = $sales - ($purchases + $expenses);
+
+            $salesData[] = $sales;
+            $purchasesData[] = $purchases;
+            $expensesData[] = $expenses;
+            $netProfitData[] = $netProfit;
+
+            $start->addDay();
+        }
+        $salesList = Sale::whereBetween('created_at', [$from, $to])->get();
+        $purchaseList = Purchase::whereBetween('purchase_date', [$from, $to])->get();
+        $expenseList = Expense::whereBetween('expense_date', [$from, $to])->get();
+
+        $totalSales = array_sum($salesData);
+        $totalPurchases = array_sum($purchasesData);
+        $totalExpenses = array_sum($expensesData);
+        $grossProfit = $totalSales - $totalPurchases;
+        $netProfit = $grossProfit - $totalExpenses;
+
+        return view('reports.profit_loss', [
+            'from' => $from,
+            'to' => $to,
+            'labels' => $labels,
+            'salesData' => $salesData,
+            'purchasesData' => $purchasesData,
+            'expensesData' => $expensesData,
+            'netProfitData' => $netProfitData,
+            'sales' => $totalSales,
+            'purchases' => $totalPurchases,
+            'expenses' => $totalExpenses,
+            'grossProfit' => $grossProfit,
+            'netProfit' => $netProfit,
+            'salesList' => $salesList,
+            'purchaseList' => $purchaseList,
+            'expenseList' => $expenseList,
+        ]);
     }
 }
