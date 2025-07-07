@@ -53,6 +53,9 @@ class SettingController extends Controller
             );
         }
 
+        // Clear settings cache
+        cache()->forget('settings_cache');
+
         return back()->with('success', 'Settings updated successfully.');
     }
 

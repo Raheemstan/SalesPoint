@@ -1,13 +1,10 @@
 @php
-    $userTheme = auth()->user()->theme ?? 'system';
+    $currentTheme = setting('theme') ?? 'system';
 @endphp
 
 <!DOCTYPE html>
-<html lang="en"
-    x-data="{ theme: '{{ $userTheme }}' }"
-    :class="{ 'dark': theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches) }"
-    class="h-full bg-gray-100 dark:bg-gray-900">
-
+<html lang="en" class="{{ $currentTheme === 'dark' || ($currentTheme === 'system' && request()->header('User-Agent') && str_contains(strtolower(request()->header('User-Agent')), 'dark')) ? 'dark' : '' }}"
+      x-data="themeSwitcher" x-init="init()" >
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -23,10 +20,9 @@
     <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
     <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-
 </head>
 
-<body class="h-full text-gray-800 dark:text-gray-100">
+<body class="h-full bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-100">
 
 <div class="flex h-screen overflow-hidden">
     {{-- Sidebar --}}
@@ -88,7 +84,7 @@
             <h1 class="text-xl font-bold">@yield('title', 'Dashboard')</h1>
             <div class="flex items-center gap-4">
                 <span class="hidden md:inline text-gray-600 dark:text-gray-300">Hi, {{ Auth::user()->name }}</span>
-                <select x-model="theme" class="border px-2 py-1 rounded text-sm bg-white dark:bg-gray-700">
+                <select x-model="theme" @change="updateTheme" class="border px-2 py-1 rounded text-sm bg-white dark:bg-gray-700">
                     <option value="system">🌓 System</option>
                     <option value="light">☀️ Light</option>
                     <option value="dark">🌙 Dark</option>
@@ -122,6 +118,43 @@
         </main>
     </div>
 </div>
+
+<script>
+    document.addEventListener('alpine:init', () => {
+        Alpine.data('themeSwitcher', () => ({
+            theme: '{{ $currentTheme }}',
+
+            init() {
+                this.applyTheme(this.theme);
+            },
+
+            applyTheme(theme) {
+                const html = document.documentElement;
+                if (theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+                    html.classList.add('dark');
+                } else {
+                    html.classList.remove('dark');
+                }
+            },
+
+            async updateTheme() {
+                this.applyTheme(this.theme);
+                try {
+                    await fetch("{{ route('settings.update') }}", {
+                        method: 'POST',
+                        headers: {
+                            'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({ theme: this.theme })
+                    });
+                } catch (err) {
+                    console.error('Theme save failed:', err);
+                }
+            }
+        }));
+    });
+</script>
 
 <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
