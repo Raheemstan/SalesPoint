@@ -48,6 +48,11 @@ class Sale extends Model
         'payment_status',
         'balance_due',
         'due_date',
+        // A tip or service charge, stored rather than derived: a reprint has to
+        // render from the sale row alone, and a guest is entitled to see the
+        // charge named rather than folded into the total.
+        'service_charge',
+        'service_charge_label',
     ];
 
     protected $casts = [
