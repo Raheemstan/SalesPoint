@@ -21,4 +21,23 @@ class AuditLog extends Model
     {
         return $this->belongsTo(User::class);
     }
+
+    /**
+     * Record an audit entry for the current user, honouring the
+     * "Enable Audit Logs" setting (on unless explicitly switched off).
+     */
+    public static function record(string $action, string $table, int $recordId = 0): ?self
+    {
+        if (setting('enable_audit_log', '1') !== '1' || !auth()->check()) {
+            return null;
+        }
+
+        return static::create([
+            'user_id'    => auth()->id(),
+            'action'     => $action,
+            'table_name' => $table,
+            'record_id'  => $recordId,
+            'ip_address' => request()->ip(),
+        ]);
+    }
 }

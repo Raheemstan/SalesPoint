@@ -9,7 +9,33 @@
     'optionLabel' => null,
     'placeholder' => null,
     'optionData' => [],
+    'searchable' => false,
 ])
+
+{{--
+    Unchanged native select - pages already depend on its markup.
+
+    Pass `searchable` on a long list (products, customers, suppliers) and it
+    hands over to x-searchable-select, which filters as you type. That is the
+    replacement for select2; the arguments are identical, so it is a one-word
+    change per field.
+--}}
+
+@if ($searchable)
+    <x-searchable-select
+        :name="$name"
+        :label="$label"
+        :options="$options"
+        :selected="$selected"
+        :value="$value"
+        :id="$id"
+        :option-value="$optionValue"
+        :option-label="$optionLabel"
+        :option-data="$optionData"
+        :placeholder="$placeholder ?? '-- Select --'"
+        {{ $attributes }}
+    />
+@else
 
 @php
     $selectId = $id ?? $name;
@@ -66,3 +92,5 @@
         <p class="text-red-500 text-xs mt-1">{{ $message }}</p>
     @enderror
 </div>
+
+@endif

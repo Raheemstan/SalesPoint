@@ -2,19 +2,19 @@
 
 namespace Database\Seeders;
 
-use Illuminate\Database\Console\Seeds\WithoutModelEvents;
+use App\Models\User;
 use Illuminate\Database\Seeder;
 use Spatie\Permission\Models\Role;
 
 class RoleSeeder extends Seeder
 {
     /**
-     * Run the database seeds.
+     * Run the database seeds. Safe to run more than once.
      */
     public function run(): void
     {
-        $admin = Role::create(['name' => 'admin']);
-        $manager = Role::create(['name' => 'manager']);
-        $cashier = Role::create(['name' => 'cashier']);
+        foreach (User::ROLES as $role) {
+            Role::findOrCreate($role, 'web');
+        }
     }
 }

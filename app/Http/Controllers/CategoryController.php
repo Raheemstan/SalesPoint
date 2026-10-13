@@ -41,6 +41,12 @@ class CategoryController extends Controller
 
     public function destroy(Category $category)
     {
+        // products.category_id cascades on delete, so deleting a category that
+        // still has products would wipe those products. Refuse instead.
+        if ($category->products()->withTrashed()->exists()) {
+            return back()->with('error', 'This category still has products. Move or delete them first.');
+        }
+
         $category->delete();
 
         return back()->with('success', 'Category deleted.');

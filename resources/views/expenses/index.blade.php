@@ -54,7 +54,7 @@
                 @forelse($expenses as $expense)
                     <tr class="border-t dark:border-gray-700">
                         <td class="px-3 py-2">{{ $expense->name }}</td>
-                        <td class="px-3 py-2">₦{{ number_format($expense->amount, 2) }}</td>
+                        <td class="px-3 py-2">{{ money($expense->amount) }}</td>
                         <td class="px-3 py-2">{{ \Carbon\Carbon::parse($expense->expense_date)->format('d M Y') }}</td>
                         <td class="px-3 py-2">{{ $expense->category }}</td>
                         <td class="px-3 py-2">{{ $expense->description }}</td>
