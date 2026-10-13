@@ -30,6 +30,20 @@
                 <x-input name="note" label="Note (optional)" />
             </div>
 
+            {{--
+                Status decides whether stock moves. "Received" is the normal case:
+                someone is typing in a delivery that is sitting on the counter.
+                "Ordered" raises the paperwork and leaves stock alone until the
+                goods turn up.
+            --}}
+            <div class="grid md:grid-cols-4 gap-4">
+                <x-select name="status" label="Status" :options="['received' => 'Received (goods are in)', 'ordered' => 'Ordered (not delivered yet)']"
+                    :selected="'received'" />
+                <x-input name="expected_at" label="Expected (optional)" type="date" />
+                <x-input name="reference" label="Supplier's reference (optional)" />
+                <x-input name="amount_paid" label="{{ 'Paid now (' . currency() . ')' }}" type="number" step="0.01" min="0" value="0" />
+            </div>
+
             {{-- Purchase Items --}}
             <div class="mt-6">
                 <h3 class="font-medium mb-2">Items</h3>
@@ -57,7 +71,7 @@
 
             {{-- Total --}}
             <div class="mt-4 text-right font-semibold">
-                <span>Total: ₦<span id="grand-total">0.00</span></span>
+                <span>Total: {{ currency() }}<span id="grand-total">0.00</span></span>
             </div>
 
             {{-- Submit --}}

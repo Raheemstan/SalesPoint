@@ -4,61 +4,55 @@ namespace App\Policies;
 
 use App\Models\Purchase;
 use App\Models\User;
-use Illuminate\Auth\Access\Response;
 
+/**
+ * Buying is a manager's job: a cashier must not see cost prices, let alone
+ * change a delivery after the fact. The routes are already behind
+ * `role:admin|manager`; this is the second lock.
+ */
 class PurchasePolicy
 {
-    /**
-     * Determine whether the user can view any models.
-     */
+    private function isManager(User $user): bool
+    {
+        return $user->hasAnyRole(['admin', 'manager']);
+    }
+
     public function viewAny(User $user): bool
     {
-        return false;
+        return $this->isManager($user);
     }
 
-    /**
-     * Determine whether the user can view the model.
-     */
     public function view(User $user, Purchase $purchase): bool
     {
-        return false;
+        return $this->isManager($user);
     }
 
-    /**
-     * Determine whether the user can create models.
-     */
     public function create(User $user): bool
     {
-        return false;
+        return $this->isManager($user);
     }
 
-    /**
-     * Determine whether the user can update the model.
-     */
     public function update(User $user, Purchase $purchase): bool
     {
-        return false;
+        return $this->isManager($user);
     }
 
-    /**
-     * Determine whether the user can delete the model.
-     */
     public function delete(User $user, Purchase $purchase): bool
     {
-        return false;
+        return $this->isManager($user);
     }
 
-    /**
-     * Determine whether the user can restore the model.
-     */
+    /** Sending goods back takes stock out, so it needs the same trust as a delete. */
+    public function return(User $user, Purchase $purchase): bool
+    {
+        return $this->isManager($user);
+    }
+
     public function restore(User $user, Purchase $purchase): bool
     {
-        return false;
+        return $this->isManager($user);
     }
 
-    /**
-     * Determine whether the user can permanently delete the model.
-     */
     public function forceDelete(User $user, Purchase $purchase): bool
     {
         return false;
