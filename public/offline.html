@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Offline - SalesPoint</title>
+    <meta name="theme-color" content="#ffffff">
+    <link rel="icon" href="/favicon.ico" type="image/x-icon">
+
+    <!--
+        Everything here is inline on purpose. This page is what the service
+        worker shows when the server cannot be reached, so it must render with
+        no stylesheet, no script and no font to fetch.
+    -->
+    <style>
+        :root {
+            color-scheme: light dark;
+            --bg: #f3f4f6;
+            --card: #ffffff;
+            --text: #111827;
+            --muted: #6b7280;
+            --line: #e5e7eb;
+            --accent: #2563eb;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg: #111827;
+                --card: #1f2937;
+                --text: #f3f4f6;
+                --muted: #9ca3af;
+                --line: #374151;
+                --accent: #60a5fa;
+            }
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 1.5rem;
+            background: var(--bg);
+            color: var(--text);
+            font: 16px/1.6 Figtree, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        }
+
+        .card {
+            width: 100%;
+            max-width: 30rem;
+            background: var(--card);
+            border: 1px solid var(--line);
+            border-radius: 0.875rem;
+            padding: 2rem;
+            text-align: center;
+            box-shadow: 0 10px 30px -12px rgba(0, 0, 0, 0.25);
+        }
+
+        svg { width: 3.5rem; height: 3.5rem; color: var(--muted); }
+
+        h1 { margin: 1rem 0 0.5rem; font-size: 1.5rem; }
+
+        p { margin: 0 0 1rem; color: var(--muted); }
+
+        ul {
+            margin: 0 0 1.5rem;
+            padding: 0 0 0 1.25rem;
+            text-align: left;
+            color: var(--muted);
+            font-size: 0.9375rem;
+        }
+
+        li { margin-bottom: 0.25rem; }
+
+        button {
+            /* Large enough to hit on a touchscreen till. */
+            min-height: 2.75rem;
+            width: 100%;
+            padding: 0.75rem 1.25rem;
+            font: inherit;
+            font-weight: 600;
+            color: #fff;
+            background: var(--accent);
+            border: 0;
+            border-radius: 0.5rem;
+            cursor: pointer;
+        }
+
+        button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+        .state { margin-top: 1rem; font-size: 0.875rem; color: var(--muted); }
+    </style>
+</head>
+<body>
+    <main class="card" role="main">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M1 1l22 22"/>
+            <path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"/>
+            <path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"/>
+            <path d="M10.71 5.05A16 16 0 0 1 22.58 9"/>
+            <path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88"/>
+            <path d="M8.53 16.11a6 6 0 0 1 6.95 0"/>
+            <path d="M12 20h.01"/>
+        </svg>
+
+        <h1>You are offline</h1>
+        <p>SalesPoint cannot reach the server, so this page could not be loaded.</p>
+
+        <ul>
+            <li>Check the till's network cable or Wi-Fi.</li>
+            <li>Pages you have not opened yet need a connection.</li>
+            <li>Nothing you had already saved has been lost.</li>
+        </ul>
+
+        <button type="button" onclick="location.reload()">Try again</button>
+
+        <p class="state" id="state" role="status" aria-live="polite"></p>
+    </main>
+
+    <script>
+        // Reload by itself the moment the connection comes back, so a cashier
+        // does not have to keep tapping the button.
+        var state = document.getElementById('state');
+
+        function report() {
+            if (navigator.onLine) {
+                state.textContent = 'Connection is back - reloading...';
+                location.reload();
+            } else {
+                state.textContent = 'Waiting for a connection...';
+            }
+        }
+
+        window.addEventListener('online', report);
+        report();
+    </script>
+</body>
+</html>

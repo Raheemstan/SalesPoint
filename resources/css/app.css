@@ -1,3 +1,157 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/*
+|--------------------------------------------------------------------------
+| Shell styles
+|--------------------------------------------------------------------------
+|
+| Only things Tailwind utilities cannot express in markup live here: rules that
+| have to apply before Alpine has booted (so the page does not flash), rules
+| that target elements a page author writes (table rows), and print rules.
+|
+*/
+
+@layer base {
+    /*
+    | Alpine hides x-show elements only after it boots. Alpine is bundled as a
+    | module, so that happens after first paint - without this, every collapsed
+    | menu and closed drawer is visible for a moment on every page load.
+    */
+    [x-cloak] {
+        display: none !important;
+    }
+
+    html {
+        /* Stop iOS zooming the page when a 14px input is focused at the till. */
+        -webkit-text-size-adjust: 100%;
+    }
+
+    body {
+        @apply antialiased;
+    }
+
+    /*
+    | A real focus ring. The old markup used `focus:outline-none` with nothing
+    | in its place, so a keyboard user could not see where they were. This is
+    | focus-visible, so it does not draw a ring on mouse clicks.
+    */
+    :where(a, button, [role='button'], input, select, textarea, summary, [tabindex]):focus-visible {
+        @apply outline-none ring-2 ring-primary-500 ring-offset-2 ring-offset-white dark:ring-offset-gray-900;
+    }
+
+    /* Keep the ring visible against a coloured sidebar/header row. */
+    .focus-ring-inset:focus-visible {
+        @apply ring-offset-0;
+    }
+}
+
+@layer components {
+    /*
+    | Sidebar
+    |
+    | The width is driven by a data attribute on <html> that a tiny inline
+    | script sets from localStorage before first paint, rather than by Alpine.
+    | If Alpine owned it, a till that remembered the narrow rail would paint the
+    | wide sidebar first and jump.
+    */
+    .app-sidebar {
+        @apply w-72 shrink-0;
+        transition: width 150ms ease;
+    }
+
+    @media (min-width: 1024px) {
+        html[data-sidebar='rail'] .app-sidebar {
+            @apply w-20;
+        }
+
+        /* Labels, group headings, chevrons and the store name all fold away. */
+        html[data-sidebar='rail'] .app-sidebar [data-rail-hide] {
+            display: none !important;
+        }
+
+        html[data-sidebar='rail'] .app-sidebar .nav-row {
+            @apply justify-center px-0;
+        }
+
+        /*
+        | A collapsed group in the rail would hide its icons with no label to
+        | say what is hidden, so groups are always expanded there.
+        |
+        | The !important rules beat what x-collapse writes inline: it animates
+        | the panel shut with height: 0 and overflow: hidden as well as
+        | display: none, so overriding display alone would leave a 0px box.
+        */
+        html[data-sidebar='rail'] .app-sidebar .nav-group-items {
+            display: block !important;
+            height: auto !important;
+            overflow: visible !important;
+        }
+    }
+
+    /* Thin scrollbar so the nav does not lose 15px of width to a scroll gutter. */
+    .scroll-thin {
+        scrollbar-width: thin;
+        scrollbar-color: theme('colors.gray.400') transparent;
+    }
+
+    .scroll-thin::-webkit-scrollbar {
+        width: 6px;
+        height: 6px;
+    }
+
+    .scroll-thin::-webkit-scrollbar-thumb {
+        @apply rounded-full bg-gray-300 dark:bg-gray-600;
+    }
+
+    .scroll-thin::-webkit-scrollbar-track {
+        background: transparent;
+    }
+
+    /*
+    | Tables
+    |
+    | x-table wraps a table whose rows the page author writes, so zebra striping
+    | and the sticky header cannot be utilities on those rows - they are applied
+    | from the wrapper instead.
+    */
+    .table-zebra tbody tr:nth-child(odd) {
+        @apply bg-gray-50 dark:bg-gray-900/40;
+    }
+
+    .table-sticky thead th {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+    }
+}
+
+@layer utilities {
+    /* Respect "reduce motion" everywhere, including Alpine's transitions. */
+    @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+            animation-duration: 0.01ms !important;
+            animation-iteration-count: 1 !important;
+            transition-duration: 0.01ms !important;
+            scroll-behavior: auto !important;
+        }
+    }
+}
+
+/* Receipts and reports: print the content, not the furniture. */
+@media print {
+    .no-print,
+    .app-sidebar,
+    .app-header,
+    #toast-stack {
+        display: none !important;
+    }
+
+    .app-main {
+        overflow: visible !important;
+        padding: 0 !important;
+    }
+}
