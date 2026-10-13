@@ -1,19 +1,22 @@
 <?php
 
-test('registration screen can be rendered', function () {
-    $response = $this->get('/register');
+use App\Models\User;
 
-    $response->assertStatus(200);
+// Public self-registration is disabled: anyone who could sign up would get into the POS.
+// Accounts are created by an admin under Settings > Users (see SettingsTest).
+
+test('the public registration screen is not available', function () {
+    $this->get('/register')->assertNotFound();
 });
 
-test('new users can register', function () {
-    $response = $this->post('/register', [
-        'name' => 'Test User',
-        'email' => 'test@example.com',
+test('the public registration endpoint is not available', function () {
+    $this->post('/register', [
+        'name' => 'Intruder',
+        'email' => 'intruder@example.com',
         'password' => 'password',
         'password_confirmation' => 'password',
-    ]);
+    ])->assertNotFound();
 
-    $this->assertAuthenticated();
-    $response->assertRedirect(route('dashboard', absolute: false));
+    $this->assertGuest();
+    expect(User::where('email', 'intruder@example.com')->exists())->toBeFalse();
 });

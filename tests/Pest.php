@@ -13,6 +13,8 @@
 
 pest()->extend(Tests\TestCase::class)
     ->use(Illuminate\Foundation\Testing\RefreshDatabase::class)
+    // The test suite must not depend on `npm run build` having produced a Vite manifest.
+    ->beforeEach(fn () => $this->withoutVite())
     ->in('Feature');
 
 /*
@@ -45,3 +47,5 @@ function something()
 {
     // ..
 }
+
+require_once __DIR__.'/Helpers.php';
