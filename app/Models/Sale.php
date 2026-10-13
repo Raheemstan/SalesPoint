@@ -10,12 +10,25 @@ class Sale extends Model
     /** @use HasFactory<\Database\Factories\SaleFactory> */
     use HasFactory;
 
+    public const STATUS_COMPLETED = 'completed';
+    public const STATUS_PARTIAL = 'partially_refunded';
+    public const STATUS_REFUNDED = 'refunded';
+    public const STATUS_VOIDED = 'voided';
 
+    /**
+     * How much of the money has actually been collected. Separate from `status`,
+     * which tracks the refund lifecycle: a sale can be fully paid and refunded,
+     * or unpaid and never refunded.
+     */
+    public const PAYMENT_PAID = 'paid';
+    public const PAYMENT_PARTIAL = 'partial';
+    public const PAYMENT_UNPAID = 'unpaid';
 
     protected $fillable = [
         'invoice_number',
         'user_id',
         'customer_id',
+        'shift_id',
         'total_amount',
         'discount_amount',
         'tax_amount',
@@ -23,7 +36,23 @@ class Sale extends Model
         'payment_method',
         'paid_amount',
         'change_due',
-        'sale_date'
+        'sale_date',
+        'status',
+        'tax_rate',
+        'discount_type',
+        'discount_value',
+        'refunded_amount',
+        'voided_at',
+        'voided_by',
+        'void_reason',
+        'payment_status',
+        'balance_due',
+        'due_date',
+    ];
+
+    protected $casts = [
+        'voided_at' => 'datetime',
+        'due_date' => 'date',
     ];
 
     public function user()
@@ -39,5 +68,71 @@ class Sale extends Model
     public function customer()
     {
         return $this->belongsTo(Customer::class);
+    }
+
+    public function refunds()
+    {
+        return $this->hasMany(Refund::class)->latest();
+    }
+
+    public function voider()
+    {
+        return $this->belongsTo(User::class, 'voided_by');
+    }
+
+    /** The till shift this sale was rung up during (null for sales made before shifts existed). */
+    public function shift()
+    {
+        return $this->belongsTo(Shift::class);
+    }
+
+    /** The tenders that made up this sale: one row per method when payment was split. */
+    public function payments()
+    {
+        return $this->hasMany(SalePayment::class);
+    }
+
+    /** Money collected later against this sale, when it was sold on credit. */
+    public function creditAllocations()
+    {
+        return $this->hasMany(CustomerPaymentAllocation::class);
+    }
+
+    /** Can anything still be refunded on this sale? */
+    public function isRefundable(): bool
+    {
+        return in_array($this->status, [self::STATUS_COMPLETED, self::STATUS_PARTIAL], true);
+    }
+
+    /** What the sale is worth after refunds. */
+    public function getNetTotalAttribute(): float
+    {
+        return round((float) $this->grand_total - (float) $this->refunded_amount, 2);
+    }
+
+    /** Was any part of this sale left to be paid later? */
+    public function isCredit(): bool
+    {
+        return in_array($this->payment_status, [self::PAYMENT_PARTIAL, self::PAYMENT_UNPAID], true);
+    }
+
+    /** Still owed on this sale, never negative. */
+    public function getOutstandingAttribute(): float
+    {
+        return max(0, round((float) $this->balance_due, 2));
+    }
+
+    /** Past its due date with money still owed. */
+    public function isOverdue(): bool
+    {
+        return $this->outstanding > 0
+            && $this->due_date !== null
+            && $this->due_date->isPast()
+            && $this->status !== self::STATUS_VOIDED;
+    }
+
+    public function scopeOutstanding($query)
+    {
+        return $query->where('balance_due', '>', 0)->where('status', '!=', self::STATUS_VOIDED);
     }
 }
