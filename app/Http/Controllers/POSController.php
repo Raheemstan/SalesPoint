@@ -362,6 +362,23 @@ class POSController extends Controller
     }
 
     /**
+     * The columns the till is allowed to know about.
+     *
+     * A cashier sells what is in the catalogue but must never see what it cost
+     * the shop - that is what ProductPolicy and PurchasePolicy say, and cost
+     * prices are exactly what tells a dishonest employee which items are worth
+     * stealing and how far a price can be pushed. `Product` has no $hidden, so
+     * returning a model straight to JSON hands over all 25 columns including
+     * cost_price, supplier_id and the reorder levels.
+     *
+     * Every search and scan response is built from this list. The till's own
+     * JavaScript reads only id, name, sale_price, stock_quantity, track_stock
+     * and is_service; sku and barcode are here because the scan path matches on
+     * them and shows them in the no-exact-match list.
+     */
+    private const TILL_COLUMNS = ['id', 'name', 'sku', 'barcode', 'sale_price', 'stock_quantity', 'is_service', 'track_stock'];
+
+    /**
      * Search for products (AJAX)
      */
     public function searchProducts(Request $request)
@@ -372,7 +389,7 @@ class POSController extends Controller
             ->when($search !== '', fn ($query) => $this->whereMatches($query, $search))
             ->orderBy('name')
             ->limit(30)
-            ->get();
+            ->get(self::TILL_COLUMNS);
 
         return response()->json($products);
     }
@@ -441,7 +458,7 @@ class POSController extends Controller
                     ->where(fn ($query) => $this->whereMatches($query, $code))
                     ->orderBy('name')
                     ->limit(10)
-                    ->get(['id', 'name', 'sku', 'barcode', 'sale_price', 'stock_quantity', 'is_service', 'track_stock']),
+                    ->get(self::TILL_COLUMNS),
                 'cart' => session()->get('cart', []),
             ]);
         }
