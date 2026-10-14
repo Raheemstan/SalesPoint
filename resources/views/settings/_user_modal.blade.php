@@ -1,93 +1,182 @@
 @php
-    $overlay = 'fixed inset-0 bg-black bg-opacity-50 z-50 hidden flex items-center justify-center p-4';
-    $panel = 'bg-white dark:bg-gray-800 p-6 rounded shadow w-full max-w-md';
+    /*
+    | Three modals, one per job: create, edit, reset password. Each is a separate
+    | top-level <form> - they are rendered here, outside the settings form and
+    | outside the users table, because a form inside a form is invalid HTML and a
+    | form inside a table cell is fragile.
+    |
+    | Plain ids and one small script rather than Alpine: the ids are what the
+    | regression test for this screen checks, and they were the original bug
+    | (the script looked up ids that did not exist, so the page threw on load and
+    | no modal ever opened). The classList toggle of `hidden` is the same, so the
+    | overlay keeps both `hidden` and `flex`: Tailwind emits `hidden` last, so it
+    | wins until the script removes it.
+    */
+    $overlay = 'fixed inset-0 z-modal flex hidden items-center justify-center bg-gray-900/60 p-4';
+    $panel = 'max-h-[90vh] w-full max-w-md overflow-y-auto rounded-xl bg-white p-5 shadow-xl'
+        . ' ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700';
+    $heading = 'text-base font-semibold text-gray-900 dark:text-gray-100';
+
+    $label = 'mb-1 block text-sm font-medium text-gray-700 dark:text-gray-200';
+    $control = 'w-full min-h-touch rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm'
+        . ' focus:border-primary-500 focus:ring-primary-500'
+        . ' dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100';
+    $error = 'mt-1 text-xs text-red-600 dark:text-red-400';
+
+    $primary = 'inline-flex min-h-touch items-center gap-1.5 rounded-md bg-primary-600 px-4 py-2 text-sm font-semibold text-white hover:bg-primary-700';
+    $secondary = 'inline-flex min-h-touch items-center gap-1.5 rounded-md bg-white px-4 py-2 text-sm font-medium text-gray-700 ring-1 ring-gray-200 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-200 dark:ring-gray-700 dark:hover:bg-gray-700';
+
+    $roles = [
+        'cashier' => 'Cashier - the till only',
+        'manager' => 'Manager - stock, reports, settings',
+        'admin' => 'Admin - everything, including users',
+    ];
 @endphp
 
-{{--
-    Three modals, one per job: create, edit, reset password. Each is a separate
-    top-level <form> - they are rendered here, outside the settings form and
-    outside the users table, because a form inside a form is invalid HTML and a
-    form inside a table cell is fragile.
-
-    Plain ids and one small script rather than Alpine: the ids are what the
-    regression test for this screen checks, and they were the original bug
-    (the script looked up ids that did not exist, so the page threw on load and
-    no modal ever opened).
---}}
-
 {{-- Create --}}
-<div id="userModal" class="{{ $overlay }}">
+<div id="userModal" class="{{ $overlay }}" role="dialog" aria-modal="true" aria-labelledby="userModalTitle">
     <div class="{{ $panel }}">
-        <h2 class="text-lg font-bold mb-4 text-gray-800 dark:text-gray-100">Add a user</h2>
+        <h2 id="userModalTitle" class="{{ $heading }}">Add a user</h2>
+        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+            They can sign in as soon as you save, with the password you set here.
+        </p>
 
-        <form id="userForm" method="POST" action="{{ route('settings.users.create') }}">
+        <form id="userForm" method="POST" action="{{ route('settings.users.create') }}" class="mt-4 space-y-3">
             @csrf
-            <x-input name="name" label="Name" required />
-            <x-input name="email" label="Email" type="email" required />
-            <x-input name="password" label="Password" type="password" required autocomplete="new-password" />
-            <x-input name="password_confirmation" label="Confirm password" type="password" required autocomplete="new-password" />
-            <x-select name="role" label="Role" value="cashier"
-                :options="['cashier' => 'Cashier - the till only', 'manager' => 'Manager - stock, reports, settings', 'admin' => 'Admin - everything, including users']" />
 
-            <div class="mt-4 flex justify-end gap-2">
-                <button type="button" id="closeUserModal"
-                    class="px-4 py-2 bg-gray-300 dark:bg-gray-600 dark:text-gray-100 rounded">Cancel</button>
-                <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded">Create user</button>
+            <div>
+                <label for="name" class="{{ $label }}">Name</label>
+                <input type="text" id="name" name="name" value="{{ old('name') }}" required class="{{ $control }}">
+                @error('name')
+                    <p class="{{ $error }}">{{ $message }}</p>
+                @enderror
+            </div>
+
+            <div>
+                <label for="email" class="{{ $label }}">Email</label>
+                <input type="email" id="email" name="email" value="{{ old('email') }}" required
+                       autocomplete="off" class="{{ $control }}">
+                @error('email')
+                    <p class="{{ $error }}">{{ $message }}</p>
+                @enderror
+            </div>
+
+            <div>
+                <label for="password" class="{{ $label }}">Password</label>
+                <input type="password" id="password" name="password" required
+                       autocomplete="new-password" class="{{ $control }}">
+                @error('password')
+                    <p class="{{ $error }}">{{ $message }}</p>
+                @enderror
+            </div>
+
+            <div>
+                <label for="password_confirmation" class="{{ $label }}">Confirm password</label>
+                <input type="password" id="password_confirmation" name="password_confirmation" required
+                       autocomplete="new-password" class="{{ $control }}">
+            </div>
+
+            <div>
+                <label for="role" class="{{ $label }}">Role</label>
+                <select id="role" name="role" class="{{ $control }}">
+                    @foreach ($roles as $value => $text)
+                        <option value="{{ $value }}" @selected(old('role', 'cashier') === $value)>{{ $text }}</option>
+                    @endforeach
+                </select>
+                @error('role')
+                    <p class="{{ $error }}">{{ $message }}</p>
+                @enderror
+            </div>
+
+            <div class="flex flex-wrap justify-end gap-2 pt-2">
+                <button type="button" id="closeUserModal" class="{{ $secondary }}">Cancel</button>
+                <button type="submit" class="{{ $primary }}">
+                    <x-icon name="plus" size="4" />
+                    Create user
+                </button>
             </div>
         </form>
     </div>
 </div>
 
 {{-- Edit --}}
-<div id="editUserModal" class="{{ $overlay }}">
+<div id="editUserModal" class="{{ $overlay }}" role="dialog" aria-modal="true" aria-labelledby="editUserModalTitle">
     <div class="{{ $panel }}">
-        <h2 class="text-lg font-bold mb-4 text-gray-800 dark:text-gray-100">
+        <h2 id="editUserModalTitle" class="{{ $heading }}">
             Edit <span id="editUserName"></span>
         </h2>
 
-        <form id="editUserForm" method="POST" action="">
+        <form id="editUserForm" method="POST" action="" class="mt-4 space-y-3">
             @csrf
             @method('PUT')
-            <x-input name="name" id="edit_name" label="Name" required />
-            <x-input name="email" id="edit_email" label="Email" type="email" required />
-            <x-select name="role" id="edit_role" label="Role"
-                :options="['cashier' => 'Cashier', 'manager' => 'Manager', 'admin' => 'Admin']" />
 
-            <p class="text-xs text-gray-500 dark:text-gray-400 mb-2">
-                You cannot remove your own admin role, and the last admin cannot be demoted - there
-                would be nobody left who could undo it.
-            </p>
+            <div>
+                <label for="edit_name" class="{{ $label }}">Name</label>
+                <input type="text" id="edit_name" name="name" required class="{{ $control }}">
+            </div>
 
-            <div class="mt-4 flex justify-end gap-2">
-                <button type="button" id="closeEditUserModal"
-                    class="px-4 py-2 bg-gray-300 dark:bg-gray-600 dark:text-gray-100 rounded">Cancel</button>
-                <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded">Save changes</button>
+            <div>
+                <label for="edit_email" class="{{ $label }}">Email</label>
+                <input type="email" id="edit_email" name="email" required autocomplete="off" class="{{ $control }}">
+            </div>
+
+            <div>
+                <label for="edit_role" class="{{ $label }}">Role</label>
+                <select id="edit_role" name="role" class="{{ $control }}">
+                    @foreach (['cashier' => 'Cashier', 'manager' => 'Manager', 'admin' => 'Admin'] as $value => $text)
+                        <option value="{{ $value }}">{{ $text }}</option>
+                    @endforeach
+                </select>
+                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    You cannot remove your own admin role, and the last admin cannot be demoted - there
+                    would be nobody left who could undo it.
+                </p>
+            </div>
+
+            <div class="flex flex-wrap justify-end gap-2 pt-2">
+                <button type="button" id="closeEditUserModal" class="{{ $secondary }}">Cancel</button>
+                <button type="submit" class="{{ $primary }}">
+                    <x-icon name="check-circle" size="4" />
+                    Save changes
+                </button>
             </div>
         </form>
     </div>
 </div>
 
 {{-- Reset password --}}
-<div id="resetPasswordModal" class="{{ $overlay }}">
+<div id="resetPasswordModal" class="{{ $overlay }}" role="dialog" aria-modal="true"
+     aria-labelledby="resetPasswordModalTitle">
     <div class="{{ $panel }}">
-        <h2 class="text-lg font-bold mb-1 text-gray-800 dark:text-gray-100">
+        <h2 id="resetPasswordModalTitle" class="{{ $heading }}">
             New password for <span id="resetUserName"></span>
         </h2>
-        <p class="text-xs text-gray-500 dark:text-gray-400 mb-4">
+        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
             For someone who is locked out. They are signed out everywhere else, and the change is
             recorded in the audit log - the password itself never is.
         </p>
 
-        <form id="resetPasswordForm" method="POST" action="">
+        <form id="resetPasswordForm" method="POST" action="" class="mt-4 space-y-3">
             @csrf
-            <x-input name="password" id="reset_password" label="New password" type="password" required autocomplete="new-password" />
-            <x-input name="password_confirmation" id="reset_password_confirmation" label="Confirm new password"
-                type="password" required autocomplete="new-password" />
 
-            <div class="mt-4 flex justify-end gap-2">
-                <button type="button" id="closeResetPasswordModal"
-                    class="px-4 py-2 bg-gray-300 dark:bg-gray-600 dark:text-gray-100 rounded">Cancel</button>
-                <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded">Set password</button>
+            <div>
+                <label for="reset_password" class="{{ $label }}">New password</label>
+                <input type="password" id="reset_password" name="password" required
+                       autocomplete="new-password" class="{{ $control }}">
+            </div>
+
+            <div>
+                <label for="reset_password_confirmation" class="{{ $label }}">Confirm new password</label>
+                <input type="password" id="reset_password_confirmation" name="password_confirmation" required
+                       autocomplete="new-password" class="{{ $control }}">
+            </div>
+
+            <div class="flex flex-wrap justify-end gap-2 pt-2">
+                <button type="button" id="closeResetPasswordModal" class="{{ $secondary }}">Cancel</button>
+                <button type="submit" class="{{ $primary }}">
+                    <x-icon name="key" size="4" />
+                    Set password
+                </button>
             </div>
         </form>
     </div>

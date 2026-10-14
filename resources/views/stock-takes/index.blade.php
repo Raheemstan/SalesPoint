@@ -2,96 +2,128 @@
 
 @section('title', 'Stock Takes')
 
+@php
+    /*
+    |--------------------------------------------------------------------------
+    | Stock-takes: the list of count sheets
+    |--------------------------------------------------------------------------
+    |
+    | Presentation only. The figures, the paging and the status filter all come
+    | from StockTakeController@index exactly as before; this file now says them
+    | in the same shell, cards, table and badges as the rest of the app.
+    */
+
+    // money() puts the symbol first, so a bare negative would read "<symbol>-100".
+    $amount = fn($value) => ($value < 0 ? '-' : '') . money(abs($value));
+
+    $statuses = collect(\App\Models\StockTake::STATUSES)
+        ->mapWithKeys(fn($status) => [$status => ucfirst($status)])
+        ->all();
+@endphp
+
 @section('content')
-    <div class="space-y-4">
+    <x-page-header title="Stock takes"
+                   subtitle="Count what is on the shelf, compare it with what the system believes, and correct the difference. Stock only moves when a count is approved.">
+        <x-slot:actions>
+            <a href="{{ route('reorder.index') }}"
+               class="inline-flex min-h-touch items-center gap-1.5 rounded-md bg-white px-4 py-2 text-sm font-medium text-gray-700 ring-1 ring-gray-200 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-200 dark:ring-gray-700 dark:hover:bg-gray-700">
+                <x-icon name="truck" size="4" />
+                Reorder list
+            </a>
 
-        {{-- What this screen is for: staff rarely meet a stock-take before their first one. --}}
-        <div class="bg-white dark:bg-gray-800 rounded shadow p-4 flex flex-wrap gap-4 justify-between items-center">
-            <div class="text-sm text-gray-600 dark:text-gray-300">
-                Count what is on the shelf, compare it with what the system believes, and correct the difference.
-                Stock only moves when a count is approved.
-            </div>
-            <div class="flex gap-2">
-                <a href="{{ route('reorder.index') }}"
-                   class="px-4 py-2 rounded border border-gray-300 dark:border-gray-600 text-sm hover:bg-gray-50 dark:hover:bg-gray-700">
-                    Reorder list
+            <a href="{{ route('adjustments.index') }}"
+               class="inline-flex min-h-touch items-center gap-1.5 rounded-md bg-white px-4 py-2 text-sm font-medium text-gray-700 ring-1 ring-gray-200 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-200 dark:ring-gray-700 dark:hover:bg-gray-700">
+                <x-icon name="sliders" size="4" />
+                Adjustments
+            </a>
+
+            <a href="{{ route('stock-takes.create') }}"
+               class="inline-flex min-h-touch items-center gap-1.5 rounded-md bg-primary-600 px-4 py-2 text-sm font-semibold text-white hover:bg-primary-700">
+                <x-icon name="plus" size="4" />
+                New count sheet
+            </a>
+        </x-slot:actions>
+    </x-page-header>
+
+    {{-- One filter row, above the list it scopes. --}}
+    <x-card class="mb-4">
+        <form method="GET" class="grid grid-cols-1 gap-x-4 sm:grid-cols-2 lg:grid-cols-4">
+            <x-select name="status" label="Status" :options="$statuses" placeholder="All"
+                      :selected="request('status')" class="min-h-touch" />
+
+            <div class="mb-4 flex min-h-touch flex-wrap items-center gap-2 self-end">
+                <button type="submit"
+                        class="inline-flex min-h-touch items-center gap-1.5 rounded-md bg-primary-600 px-4 py-2 text-sm font-semibold text-white hover:bg-primary-700">
+                    <x-icon name="search" size="4" />
+                    Filter
+                </button>
+
+                <a href="{{ route('stock-takes.index') }}"
+                   class="inline-flex min-h-touch items-center rounded-md px-3 py-2 text-sm text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700">
+                    Reset
                 </a>
-                <a href="{{ route('adjustments.index') }}"
-                   class="px-4 py-2 rounded border border-gray-300 dark:border-gray-600 text-sm hover:bg-gray-50 dark:hover:bg-gray-700">
-                    Adjustments
-                </a>
-                <a href="{{ route('stock-takes.create') }}"
-                   class="px-4 py-2 rounded bg-green-600 hover:bg-green-700 text-white text-sm">
-                    + New count sheet
-                </a>
             </div>
-        </div>
+        </form>
+    </x-card>
 
-        <div class="bg-white dark:bg-gray-800 rounded shadow p-4">
-            <form method="GET" class="flex flex-wrap items-end gap-3 mb-4">
-                <div class="w-48">
-                    <label for="status" class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Status</label>
-                    <select name="status" id="status"
-                            class="w-full px-3 py-2 border rounded-md shadow-sm dark:bg-gray-800 dark:text-white dark:border-gray-600">
-                        <option value="">All</option>
-                        @foreach (\App\Models\StockTake::STATUSES as $status)
-                            <option value="{{ $status }}" @selected(request('status') === $status)>{{ ucfirst($status) }}</option>
-                        @endforeach
-                    </select>
-                </div>
-                <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded text-sm">Filter</button>
-                <a href="{{ route('stock-takes.index') }}" class="text-sm text-gray-500 dark:text-gray-400">Reset</a>
-            </form>
+    <x-card :padding="false">
+        <x-table>
+            <x-slot:head>
+                <tr>
+                    <th>Reference</th>
+                    <th>Started</th>
+                    <th>Counted by</th>
+                    <th class="text-right">Lines</th>
+                    <th class="text-right">Counted</th>
+                    <th class="text-right">Variance value</th>
+                    <th>Status</th>
+                    <th>Approved by</th>
+                    <th><span class="sr-only">Open</span></th>
+                </tr>
+            </x-slot:head>
 
-            <div class="overflow-x-auto">
-                <table class="w-full table-auto text-sm">
-                    <thead class="bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300">
-                        <tr>
-                            <th class="p-2 text-left">Reference</th>
-                            <th class="p-2 text-left">Started</th>
-                            <th class="p-2 text-left">Counted by</th>
-                            <th class="p-2 text-right">Lines</th>
-                            <th class="p-2 text-right">Counted</th>
-                            <th class="p-2 text-right">Variance value</th>
-                            <th class="p-2 text-left">Status</th>
-                            <th class="p-2 text-left">Approved by</th>
-                            <th class="p-2"></th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @forelse ($stockTakes as $stockTake)
-                            @php $variance = (float) ($stockTake->variance_value ?? 0); @endphp
-                            <tr class="border-t dark:border-gray-700">
-                                <td class="p-2 font-mono">{{ $stockTake->reference }}</td>
-                                <td class="p-2">{{ $stockTake->created_at->format('d M Y H:i') }}</td>
-                                <td class="p-2">{{ $stockTake->user->name ?? '-' }}</td>
-                                <td class="p-2 text-right">{{ $stockTake->items_count }}</td>
-                                <td class="p-2 text-right">{{ $stockTake->counted_items_count }}</td>
-                                <td class="p-2 text-right {{ $variance < 0 ? 'text-red-600 dark:text-red-400' : ($variance > 0 ? 'text-green-600 dark:text-green-400' : '') }}">
-                                    {{ money($variance) }}
-                                </td>
-                                <td class="p-2">
-                                    @include('stock-takes._status', ['status' => $stockTake->status])
-                                </td>
-                                <td class="p-2">{{ $stockTake->approver->name ?? '-' }}</td>
-                                <td class="p-2 text-right">
-                                    <a href="{{ route('stock-takes.show', $stockTake) }}" class="text-blue-600 dark:text-blue-400 hover:underline">
-                                        {{ $stockTake->isEditable() ? 'Count' : 'View' }}
-                                    </a>
-                                </td>
-                            </tr>
-                        @empty
-                            <tr>
-                                <td colspan="9" class="text-center py-6 text-gray-500 dark:text-gray-400">
-                                    No stock-takes yet. Start one when you are ready to count.
-                                </td>
-                            </tr>
-                        @endforelse
-                    </tbody>
-                </table>
-            </div>
+            @forelse ($stockTakes as $stockTake)
+                @php $variance = (float) ($stockTake->variance_value ?? 0); @endphp
+                <tr>
+                    <td class="whitespace-nowrap font-mono font-medium">{{ $stockTake->reference }}</td>
+                    <td class="whitespace-nowrap text-gray-500 dark:text-gray-400">
+                        {{ $stockTake->created_at->format('d M Y H:i') }}
+                    </td>
+                    <td>{{ $stockTake->user->name ?? '-' }}</td>
+                    <td class="text-right tabular-nums">{{ number_format($stockTake->items_count) }}</td>
+                    <td class="text-right tabular-nums">{{ number_format($stockTake->counted_items_count) }}</td>
+                    <td class="text-right tabular-nums {{ $variance < 0 ? 'text-red-700 dark:text-red-400' : ($variance > 0 ? 'text-green-700 dark:text-green-400' : '') }}">
+                        {{ $amount($variance) }}
+                    </td>
+                    <td>@include('stock-takes._status', ['status' => $stockTake->status])</td>
+                    <td class="text-gray-500 dark:text-gray-400">{{ $stockTake->approver->name ?? '-' }}</td>
+                    <td class="text-right">
+                        <a href="{{ route('stock-takes.show', $stockTake) }}"
+                           class="font-medium text-primary-600 hover:underline dark:text-primary-400">
+                            {{ $stockTake->isEditable() ? 'Count' : 'View' }}
+                        </a>
+                    </td>
+                </tr>
+            @empty
+                <tr>
+                    <td colspan="9">
+                        <x-empty icon="clipboard-check" title="No stock-takes yet"
+                                 message="Start one when you are ready to count.">
+                            <x-slot:action>
+                                <a href="{{ route('stock-takes.create') }}"
+                                   class="inline-flex min-h-touch items-center gap-1.5 rounded-md bg-primary-600 px-4 py-2 text-sm font-semibold text-white hover:bg-primary-700">
+                                    <x-icon name="plus" size="4" />
+                                    New count sheet
+                                </a>
+                            </x-slot:action>
+                        </x-empty>
+                    </td>
+                </tr>
+            @endforelse
+        </x-table>
 
-            <div class="mt-4">{{ $stockTakes->links() }}</div>
-        </div>
-    </div>
+        @if ($stockTakes->hasPages())
+            <x-slot:footer>{{ $stockTakes->links() }}</x-slot:footer>
+        @endif
+    </x-card>
 @endsection

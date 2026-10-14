@@ -3,127 +3,128 @@
 @section('title', 'Audit log')
 
 @php
-    $input = 'rounded-md border border-gray-300 dark:border-gray-600 px-2 py-1 bg-white dark:bg-gray-700 dark:text-gray-100 text-sm';
+    /*
+    | The audit log viewer.
+    |
+    | The filter row is the one every report shares, so the screen a manager
+    | learns on the sales report is the screen they already know here. The
+    | action column is a status pill like every other status in the app, keyed
+    | off what the action did rather than off a hardcoded list - the dropdown
+    | above it is built from whatever is actually in the log.
+    */
+    $actionVariant = function (string $action): string {
+        $text = Str::lower($action);
+
+        return match (true) {
+            Str::contains($text, ['deleted', 'void', 'failed', 'removed', 'deactivated']) => 'red',
+            Str::contains($text, ['refund']) => 'orange',
+            Str::contains($text, ['created', 'added', 'ran ', 'reactivated']) => 'green',
+            Str::contains($text, ['updated', 'edited', 'reset', 'changed', 'adjusted']) => 'blue',
+            Str::contains($text, ['exported', 'downloaded', 'emailed', 'printed']) => 'indigo',
+            default => 'gray',
+        };
+    };
+
+    $recording = setting('enable_audit_log', '1') === '1';
 @endphp
 
 @section('content')
-<div class="bg-white dark:bg-gray-800 rounded shadow p-4 text-sm">
+    <x-page-header title="Audit log" subtitle="Who did what, and from where. Newest first."
+                   :back="route('settings.index')" back-label="Back to settings" />
 
-    <div class="flex flex-wrap items-start justify-between gap-2 mb-4">
-        <div>
-            <h2 class="text-2xl font-semibold text-gray-800 dark:text-gray-100">Audit log</h2>
-            <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                Who did what, and from where. Newest first.
-                @if (setting('enable_audit_log', '1') !== '1')
-                    <span class="text-amber-600 dark:text-amber-400">
-                        Recording is currently switched off in Settings &rsaquo; Security, so nothing new is
-                        being added.
-                    </span>
-                @endif
+    @unless ($recording)
+        <div class="mb-4 flex items-start gap-3 rounded-xl bg-amber-50 p-4 ring-1 ring-amber-200
+                    dark:bg-amber-900/30 dark:ring-amber-800" role="status">
+            <span class="mt-0.5 shrink-0 text-amber-600 dark:text-amber-300">
+                <x-icon name="alert-triangle" size="5" />
+            </span>
+            <p class="min-w-0 text-sm text-amber-900 dark:text-amber-100">
+                Recording is currently switched off in Settings &rsaquo; Security, so nothing new is
+                being added. What is already here stays.
             </p>
         </div>
-        <a href="{{ route('settings.index') }}" class="text-blue-600 dark:text-blue-400 hover:underline">
-            &larr; Back to settings
-        </a>
-    </div>
+    @endunless
 
-    <form method="GET" action="{{ route('settings.audit') }}" class="flex flex-wrap gap-3 items-end mb-4">
-        <label class="text-xs text-gray-500 dark:text-gray-400">
-            Person
-            <select name="user_id" class="{{ $input }} block">
-                <option value="">Anyone</option>
-                @foreach ($users as $user)
-                    <option value="{{ $user->id }}" @selected((string) $filters['user_id'] === (string) $user->id)>
-                        {{ $user->name }}
-                    </option>
-                @endforeach
-            </select>
-        </label>
+    @include('reports.partials.filter-bar', [
+        'startDate' => (string) $filters['from'],
+        'endDate' => (string) $filters['to'],
+        'startKey' => 'from',
+        'endKey' => 'to',
+        'fields' => [
+            [
+                'name' => 'user_id',
+                'label' => 'Person',
+                'options' => $users->pluck('name', 'id')->all(),
+                'value' => $filters['user_id'],
+                'placeholder' => 'Anyone',
+            ],
+            [
+                'name' => 'action',
+                'label' => 'Action',
+                'options' => $actions->mapWithKeys(fn ($a) => [$a => $a])->all(),
+                'value' => $filters['action'],
+                'placeholder' => 'Any action',
+            ],
+            [
+                'name' => 'table_name',
+                'label' => 'Table',
+                'options' => $tables->mapWithKeys(fn ($t) => [$t => $t])->all(),
+                'value' => $filters['table_name'],
+                'placeholder' => 'Any table',
+            ],
+        ],
+        'csvRoute' => route('settings.audit.csv', request()->query()),
+        'note' => 'The export carries whatever is on screen, not the whole log.',
+    ])
 
-        <label class="text-xs text-gray-500 dark:text-gray-400">
-            Action
-            <select name="action" class="{{ $input }} block">
-                <option value="">Any action</option>
-                @foreach ($actions as $action)
-                    <option value="{{ $action }}" @selected($filters['action'] === $action)>{{ $action }}</option>
-                @endforeach
-            </select>
-        </label>
-
-        <label class="text-xs text-gray-500 dark:text-gray-400">
-            Table
-            <select name="table_name" class="{{ $input }} block">
-                <option value="">Any table</option>
-                @foreach ($tables as $table)
-                    <option value="{{ $table }}" @selected($filters['table_name'] === $table)>{{ $table }}</option>
-                @endforeach
-            </select>
-        </label>
-
-        <label class="text-xs text-gray-500 dark:text-gray-400">
-            From
-            <input type="date" name="from" value="{{ $filters['from'] }}" class="{{ $input }} block">
-        </label>
-
-        <label class="text-xs text-gray-500 dark:text-gray-400">
-            To
-            <input type="date" name="to" value="{{ $filters['to'] }}" class="{{ $input }} block">
-        </label>
-
-        <button class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded">Filter</button>
-
-        @if (array_filter($filters))
-            <a href="{{ route('settings.audit') }}" class="text-gray-500 dark:text-gray-400 hover:underline px-1">Clear</a>
-        @endif
-
-        {{-- The export carries whatever is being looked at, not the whole log. --}}
-        <a href="{{ route('settings.audit.csv', request()->query()) }}"
-            class="bg-green-600 hover:bg-green-700 text-white px-4 py-1.5 rounded">Export CSV</a>
-    </form>
-
-    <div class="overflow-x-auto">
-        <table class="w-full text-left dark:text-gray-200">
-            <thead>
-                <tr class="bg-gray-100 dark:bg-gray-700">
-                    <th class="p-2">When</th>
-                    <th class="p-2">Person</th>
-                    <th class="p-2">Action</th>
-                    <th class="p-2">Table</th>
-                    <th class="p-2 text-right">Record</th>
-                    <th class="p-2">IP address</th>
+    <x-card :padding="false" class="mt-4">
+        <x-table>
+            <x-slot:head>
+                <tr>
+                    <th>When</th>
+                    <th>Person</th>
+                    <th>Action</th>
+                    <th>Table</th>
+                    <th class="text-right">Record</th>
+                    <th>IP address</th>
                 </tr>
-            </thead>
-            <tbody>
-                @forelse ($logs as $log)
-                    <tr class="border-b border-gray-100 dark:border-gray-700">
-                        <td class="p-2 whitespace-nowrap">{{ $log->created_at->format('d M Y H:i:s') }}</td>
-                        <td class="p-2">
-                            {{-- Eager loaded; a deleted user still has their name here. --}}
-                            {{ $log->user->name ?? 'Deleted user #' . $log->user_id }}
-                            @if ($log->user?->role)
-                                <span class="text-xs text-gray-400 capitalize">({{ $log->user->role }})</span>
-                            @endif
-                        </td>
-                        <td class="p-2">{{ $log->action }}</td>
-                        <td class="p-2 text-gray-500 dark:text-gray-400">{{ $log->table_name }}</td>
-                        <td class="p-2 text-right text-gray-500 dark:text-gray-400">
-                            {{ $log->record_id ?: '-' }}
-                        </td>
-                        <td class="p-2 text-gray-500 dark:text-gray-400">{{ $log->ip_address ?: '-' }}</td>
-                    </tr>
-                @empty
-                    <tr>
-                        <td colspan="6" class="p-3 text-gray-500 dark:text-gray-400">
-                            Nothing recorded for these filters.
-                        </td>
-                    </tr>
-                @endforelse
-            </tbody>
-        </table>
-    </div>
+            </x-slot:head>
 
-    <div class="mt-4">
-        {{ $logs->links() }}
-    </div>
-</div>
+            @forelse ($logs as $log)
+                <tr>
+                    <td class="whitespace-nowrap tabular-nums">{{ $log->created_at->format('d M Y H:i:s') }}</td>
+                    <td>
+                        {{-- Eager loaded; a deleted user still has their name here. --}}
+                        <span class="font-medium">{{ $log->user->name ?? 'Deleted user #' . $log->user_id }}</span>
+                        @if ($log->user?->role)
+                            <span class="block text-xs capitalize text-gray-500 dark:text-gray-400">
+                                {{ $log->user->role }}
+                            </span>
+                        @endif
+                    </td>
+                    <td>
+                        <x-badge :variant="$actionVariant($log->action)" size="sm">{{ $log->action }}</x-badge>
+                    </td>
+                    <td class="text-gray-500 dark:text-gray-400">{{ $log->table_name }}</td>
+                    <td class="text-right tabular-nums text-gray-500 dark:text-gray-400">
+                        {{ $log->record_id ?: '-' }}
+                    </td>
+                    <td class="whitespace-nowrap tabular-nums text-gray-500 dark:text-gray-400">
+                        {{ $log->ip_address ?: '-' }}
+                    </td>
+                </tr>
+            @empty
+                <tr>
+                    <td colspan="6">
+                        <x-empty icon="shield" title="Nothing recorded for these filters"
+                                 message="Widen the date range, or clear the filters to see the whole log." />
+                    </td>
+                </tr>
+            @endforelse
+        </x-table>
+
+        <x-slot:footer>
+            {{ $logs->links() }}
+        </x-slot:footer>
+    </x-card>
 @endsection

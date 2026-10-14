@@ -4,115 +4,134 @@
 
 @section('content')
     @php
-        $card = 'bg-white dark:bg-gray-800 rounded shadow p-4';
-        $input = 'w-full rounded border border-gray-300 dark:border-gray-600 px-3 py-2 bg-white dark:bg-gray-700';
+        $supplierLabel = term('supplier', false, 'Supplier');
+        $suppliersLabel = term('supplier', true, 'Suppliers');
+        $productLabel = term('product', false, 'Product');
+
+        $filterInput = 'min-h-touch w-full rounded-md border-gray-300 bg-white text-sm shadow-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white';
+        $filterLabel = 'mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400';
     @endphp
 
-    <div class="space-y-4">
+    <x-page-header :title="'Returns to ' . Str::lower($suppliersLabel)"
+                   subtitle="Goods sent back, and what was credited for them"
+                   :back="route('purchases.index')"
+                   :back-label="term('purchase', true, 'Purchases')" />
 
-        <div class="{{ $card }} flex flex-wrap justify-between items-center gap-3">
-            <div>
-                <h2 class="text-lg font-semibold">Returns to {{ Str::lower(term('supplier', true, 'Suppliers')) }}</h2>
-                <p class="text-sm text-gray-500 dark:text-gray-400">
-                    Goods sent back: <strong>{{ money($total) }}</strong> credited across everything matching.
-                </p>
-            </div>
-            <a href="{{ route('purchases.index') }}"
-               class="px-4 py-2 rounded border border-gray-300 dark:border-gray-600 text-sm">
-                {{ term('purchase', true, 'Purchases') }}
-            </a>
-        </div>
+    <div class="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <x-stat label="Credited" :value="money($total)" icon="undo"
+                hint="across everything matching" />
+        <x-stat label="Returns listed" :value="number_format($returns->total())" icon="truck" />
+    </div>
 
-        {{-- Filters --}}
-        <form method="GET" class="{{ $card }} grid grid-cols-1 md:grid-cols-5 gap-3 items-end">
+    {{-- Filters --}}
+    <x-card class="mb-4">
+        <form method="GET" class="grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2 lg:grid-cols-5">
             <div>
-                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Search</label>
-                <input type="text" name="search" value="{{ request('search') }}" placeholder="Reference or invoice"
-                       class="{{ $input }}">
+                <label for="return-search" class="{{ $filterLabel }}">Search</label>
+                <input id="return-search" type="search" name="search" value="{{ request('search') }}"
+                       placeholder="Reference or invoice" class="{{ $filterInput }}">
             </div>
+
+            {{-- searchable: the same long supplier list as everywhere else. --}}
+            <div class="[&>div]:mb-0">
+                <x-select name="supplier_id" :label="$supplierLabel" searchable
+                          :options="$suppliers" option-label="name" option-value="id"
+                          placeholder="All" :selected="request('supplier_id')" />
+            </div>
+
             <div>
-                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    {{ term('supplier', false, 'Supplier') }}
-                </label>
-                <select name="supplier_id" class="{{ $input }}">
-                    <option value="">All</option>
-                    @foreach ($suppliers as $supplier)
-                        <option value="{{ $supplier->id }}" @selected(request('supplier_id') == $supplier->id)>
-                            {{ $supplier->name }}
-                        </option>
-                    @endforeach
-                </select>
+                <label for="return-from" class="{{ $filterLabel }}">From</label>
+                <input id="return-from" type="date" name="from" value="{{ request('from') }}" class="{{ $filterInput }}">
             </div>
+
             <div>
-                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">From</label>
-                <input type="date" name="from" value="{{ request('from') }}" class="{{ $input }}">
+                <label for="return-to" class="{{ $filterLabel }}">To</label>
+                <input id="return-to" type="date" name="to" value="{{ request('to') }}" class="{{ $filterInput }}">
             </div>
-            <div>
-                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">To</label>
-                <input type="date" name="to" value="{{ request('to') }}" class="{{ $input }}">
-            </div>
-            <div class="flex gap-2">
-                <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded text-sm">Filter</button>
-                <a href="{{ route('purchases.returns.index') }}" class="px-4 py-2 text-sm text-gray-500">Reset</a>
+
+            <div class="flex items-end gap-2">
+                <button type="submit"
+                        class="inline-flex min-h-touch items-center gap-1.5 rounded-md bg-primary-600 px-4 py-2 text-sm font-semibold text-white hover:bg-primary-700">
+                    Filter
+                </button>
+                <a href="{{ route('purchases.returns.index') }}"
+                   class="inline-flex min-h-touch items-center gap-1.5 rounded-md bg-white px-4 py-2 text-sm font-medium text-gray-700 ring-1 ring-gray-200 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-200 dark:ring-gray-700 dark:hover:bg-gray-700">
+                    Reset
+                </a>
             </div>
         </form>
+    </x-card>
 
-        {{-- List --}}
-        <div class="{{ $card }} overflow-x-auto">
-            <table class="w-full text-sm">
-                <thead class="bg-gray-100 dark:bg-gray-700 text-left">
-                    <tr>
-                        <th class="p-2">Date</th>
-                        <th class="p-2">Reference</th>
-                        <th class="p-2">{{ term('supplier', false, 'Supplier') }}</th>
-                        <th class="p-2">Against</th>
-                        <th class="p-2">Items</th>
-                        <th class="p-2">Reason</th>
-                        <th class="p-2">By</th>
-                        <th class="p-2 text-right">Credited</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @forelse ($returns as $return)
-                        <tr class="border-b border-gray-200 dark:border-gray-700">
-                            <td class="p-2 whitespace-nowrap">{{ $return->created_at->format('d M Y') }}</td>
-                            <td class="p-2 font-mono text-xs">{{ $return->reference }}</td>
-                            <td class="p-2">
-                                @if ($return->supplier)
-                                    <a href="{{ route('suppliers.show', $return->supplier) }}"
-                                       class="text-blue-600 dark:text-blue-400 hover:underline">{{ $return->supplier->name }}</a>
-                                @else
-                                    -
-                                @endif
-                            </td>
-                            <td class="p-2">
-                                @if ($return->purchase)
-                                    <a href="{{ route('purchases.show', $return->purchase) }}"
-                                       class="text-blue-600 dark:text-blue-400 hover:underline">{{ $return->purchase->invoice_number }}</a>
-                                @else
-                                    -
-                                @endif
-                            </td>
-                            <td class="p-2 text-xs text-gray-600 dark:text-gray-300">
-                                @foreach ($return->items as $line)
-                                    {{ $line->product->name ?? 'Deleted product' }} &times;{{ $line->quantity }}@if (!$loop->last), @endif
-                                @endforeach
-                            </td>
-                            <td class="p-2">{{ $return->reason }}</td>
-                            <td class="p-2">{{ $return->user->name ?? '-' }}</td>
-                            <td class="p-2 text-right">{{ money($return->total_amount) }}</td>
-                        </tr>
-                    @empty
-                        <tr>
-                            <td colspan="8" class="p-4 text-center text-gray-500 dark:text-gray-400">
-                                Nothing has been returned to a {{ Str::lower(term('supplier', false, 'Supplier')) }}.
-                            </td>
-                        </tr>
-                    @endforelse
-                </tbody>
-            </table>
+    {{-- List --}}
+    <x-card :padding="false">
+        <x-table>
+            <x-slot:head>
+                <tr>
+                    <th>Date</th>
+                    <th>Reference</th>
+                    <th>{{ $supplierLabel }}</th>
+                    <th>Against</th>
+                    <th>Items</th>
+                    <th>Reason</th>
+                    <th>By</th>
+                    <th class="text-right">Credited</th>
+                </tr>
+            </x-slot:head>
 
-            <div class="mt-4">{{ $returns->links() }}</div>
-        </div>
-    </div>
+            @forelse ($returns as $return)
+                <tr>
+                    <td class="whitespace-nowrap text-gray-500 dark:text-gray-400">
+                        {{ $return->created_at->format('d M Y') }}
+                    </td>
+                    <td class="whitespace-nowrap font-mono text-xs">{{ $return->reference }}</td>
+                    <td>
+                        @if ($return->supplier)
+                            <a href="{{ route('suppliers.show', $return->supplier) }}"
+                               class="font-medium text-primary-600 hover:underline dark:text-primary-400">
+                                {{ $return->supplier->name }}
+                            </a>
+                        @else
+                            -
+                        @endif
+                    </td>
+                    <td>
+                        @if ($return->purchase)
+                            <a href="{{ route('purchases.show', $return->purchase) }}"
+                               class="font-medium text-primary-600 hover:underline dark:text-primary-400">
+                                {{ $return->purchase->invoice_number }}
+                            </a>
+                        @else
+                            -
+                        @endif
+                    </td>
+                    <td class="text-xs text-gray-600 dark:text-gray-300">
+                        @foreach ($return->items as $line)
+                            {{ $line->product->name ?? 'Deleted product' }} &times;{{ $line->quantity }}@if (!$loop->last), @endif
+                        @endforeach
+                    </td>
+                    <td>{{ $return->reason }}</td>
+                    <td class="whitespace-nowrap">{{ $return->user->name ?? '-' }}</td>
+                    <td class="text-right tabular-nums">{{ money($return->total_amount) }}</td>
+                </tr>
+            @empty
+                <tr>
+                    <td colspan="8">
+                        <x-empty icon="undo" title="Nothing returned yet"
+                                 :message="'Nothing has been returned to a ' . Str::lower($supplierLabel) . '.'">
+                            <x-slot:action>
+                                <a href="{{ route('purchases.index') }}"
+                                   class="inline-flex min-h-touch items-center gap-1.5 rounded-md bg-primary-600 px-4 py-2 text-sm font-semibold text-white hover:bg-primary-700">
+                                    {{ term('purchase', true, 'Purchases') }}
+                                </a>
+                            </x-slot:action>
+                        </x-empty>
+                    </td>
+                </tr>
+            @endforelse
+        </x-table>
+
+        @if ($returns->hasPages())
+            <x-slot:footer>{{ $returns->links() }}</x-slot:footer>
+        @endif
+    </x-card>
 @endsection

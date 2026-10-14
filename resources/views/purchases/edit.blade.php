@@ -6,9 +6,11 @@
     @php
         $label = term('purchase', false, 'Purchase');
         $productLabel = term('product', false, 'Product');
-        $card = 'bg-white dark:bg-gray-800 rounded shadow p-4';
-        $input = 'w-full rounded border border-gray-300 dark:border-gray-600 px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100';
-        $labelClass = 'block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1';
+        $supplierLabel = term('supplier', false, 'Supplier');
+
+        $input = 'min-h-touch w-full rounded-md border-gray-300 bg-white shadow-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white';
+        $labelClass = 'mb-1 block text-sm font-medium text-gray-700 dark:text-gray-200';
+        $hintClass = 'mt-1 text-xs text-gray-500 dark:text-gray-400';
 
         // The catalogue, small enough to hand to the picker in one go.
         $catalogue = $products->map(fn($p) => ['id' => $p->id, 'name' => $p->name, 'cost' => (float) $p->cost_price])->values();
@@ -25,13 +27,15 @@
                 'quantity' => (int) $item->quantity,
                 'cost_price' => (float) $item->cost_price,
             ])->values();
+
+        $decimals = (int) setting('currency_decimals', config('sectors.currency.decimals'));
+        $received = \App\Models\Purchase::STATUS_RECEIVED;
     @endphp
 
-    <div class="space-y-4"
-         x-data="{
+    <div x-data="{
             products: {{ Js::from($catalogue) }},
             rows: {{ Js::from($rows) }},
-            status: '{{ old('status', $purchase->status) }}',
+            status: @js(old('status', $purchase->status)),
             addRow() {
                 this.rows.push({ product_id: '', quantity: 1, cost_price: 0 });
             },
@@ -51,169 +55,187 @@
                 return this.rows.reduce((sum, row) => sum + this.lineTotal(row), 0);
             },
             money(value) {
-                return '{{ currency() }}' + (Number(value) || 0).toLocaleString(undefined, {
-                    minimumFractionDigits: {{ (int) setting('currency_decimals', config('sectors.currency.decimals')) }},
-                    maximumFractionDigits: {{ (int) setting('currency_decimals', config('sectors.currency.decimals')) }},
+                return @js(currency()) + (Number(value) || 0).toLocaleString(undefined, {
+                    minimumFractionDigits: {{ $decimals }},
+                    maximumFractionDigits: {{ $decimals }},
                 });
             },
          }">
 
-        <div class="{{ $card }} flex flex-wrap justify-between items-center gap-3">
-            <div>
-                <h2 class="text-lg font-semibold">Edit {{ $label }} {{ $purchase->invoice_number }}</h2>
-                <p class="text-sm text-gray-500 dark:text-gray-400">
-                    @if ($purchase->hasMovedStock())
-                        This {{ Str::lower($label) }} is received, so its quantities are already on the shelf.
-                        Saving moves only the difference: dropping a line from 10 to 7 takes 3 back out.
-                    @else
-                        Nothing has been added to stock yet. Set the status to received when the goods arrive.
-                    @endif
-                </p>
-            </div>
-            <a href="{{ route('purchases.show', $purchase) }}"
-               class="px-4 py-2 rounded border border-gray-300 dark:border-gray-600 text-sm">&larr; Back</a>
-        </div>
+        <x-page-header :title="'Edit ' . $label . ' ' . $purchase->invoice_number"
+                       :subtitle="$purchase->hasMovedStock()
+                            ? 'This ' . Str::lower($label) . ' is received, so its quantities are already on the shelf. Saving moves only the difference: dropping a line from 10 to 7 takes 3 back out.'
+                            : 'Nothing has been added to stock yet. Set the status to received when the goods arrive.'"
+                       :back="route('purchases.show', $purchase)"
+                       :back-label="$purchase->invoice_number" />
 
         <form method="POST" action="{{ route('purchases.update', $purchase) }}" class="space-y-4">
             @csrf
             @method('PUT')
 
-            <div class="{{ $card }} grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                    <label class="{{ $labelClass }}">{{ term('supplier', false, 'Supplier') }}</label>
-                    <select name="supplier_id" required class="{{ $input }}">
-                        @foreach ($suppliers as $supplier)
-                            <option value="{{ $supplier->id }}" @selected(old('supplier_id', $purchase->supplier_id) == $supplier->id)>
-                                {{ $supplier->name }}
-                            </option>
-                        @endforeach
-                    </select>
-                </div>
+            <x-card :title="$label . ' details'">
+                <div class="grid grid-cols-1 gap-x-6 gap-y-4 md:grid-cols-3">
+                    {{--
+                        Every supplier is offered here, not just the active ones:
+                        a purchase that already uses a deactivated supplier has to
+                        stay editable.
+                    --}}
+                    <div class="[&>div]:mb-0">
+                        <x-select name="supplier_id" :label="$supplierLabel" required searchable
+                                  :options="$suppliers" option-label="name" option-value="id"
+                                  :selected="old('supplier_id', $purchase->supplier_id)" />
+                    </div>
 
-                <div>
-                    <label class="{{ $labelClass }}">Invoice number</label>
-                    <input type="text" name="invoice_number" required maxlength="255"
-                           value="{{ old('invoice_number', $purchase->invoice_number) }}" class="{{ $input }}">
-                </div>
+                    <div>
+                        <label for="invoice_number" class="{{ $labelClass }}">
+                            Invoice number <span class="text-red-600" aria-hidden="true">*</span>
+                        </label>
+                        <input id="invoice_number" type="text" name="invoice_number" required maxlength="255"
+                               value="{{ old('invoice_number', $purchase->invoice_number) }}" class="{{ $input }}">
+                    </div>
 
-                <div>
-                    <label class="{{ $labelClass }}">Status</label>
-                    <select name="status" x-model="status" class="{{ $input }}">
-                        <option value="{{ \App\Models\Purchase::STATUS_ORDERED }}">Ordered (nothing delivered)</option>
-                        <option value="{{ \App\Models\Purchase::STATUS_RECEIVED }}">Received (goods are in)</option>
-                        <option value="{{ \App\Models\Purchase::STATUS_CANCELLED }}">Cancelled</option>
-                    </select>
-                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-1"
-                       x-show="status === '{{ \App\Models\Purchase::STATUS_RECEIVED }}' && {{ $purchase->hasMovedStock() ? 'false' : 'true' }}"
-                       style="display: none">
-                        Saving this will add the quantities below to stock.
-                    </p>
-                    <p class="text-xs text-red-600 dark:text-red-400 mt-1"
-                       x-show="status !== '{{ \App\Models\Purchase::STATUS_RECEIVED }}' && {{ $purchase->hasMovedStock() ? 'true' : 'false' }}"
-                       style="display: none">
-                        Saving this will take the quantities back out of stock.
-                    </p>
-                </div>
+                    <div>
+                        <label for="status" class="{{ $labelClass }}">Status</label>
+                        <select id="status" name="status" x-model="status" class="{{ $input }}">
+                            <option value="{{ \App\Models\Purchase::STATUS_ORDERED }}">Ordered (nothing delivered)</option>
+                            <option value="{{ $received }}">Received (goods are in)</option>
+                            <option value="{{ \App\Models\Purchase::STATUS_CANCELLED }}">Cancelled</option>
+                        </select>
 
-                <div>
-                    <label class="{{ $labelClass }}">{{ $label }} date</label>
-                    <input type="date" name="purchase_date" required
-                           value="{{ old('purchase_date', \Carbon\Carbon::parse($purchase->purchase_date)->toDateString()) }}"
-                           class="{{ $input }}">
-                </div>
+                        <p class="{{ $hintClass }}" x-cloak
+                           x-show="status === @js($received) && {{ $purchase->hasMovedStock() ? 'false' : 'true' }}">
+                            Saving this will add the quantities below to stock.
+                        </p>
+                        <p class="mt-1 text-xs text-red-600 dark:text-red-400" x-cloak
+                           x-show="status !== @js($received) && {{ $purchase->hasMovedStock() ? 'true' : 'false' }}">
+                            Saving this will take the quantities back out of stock.
+                        </p>
+                    </div>
 
-                <div>
-                    <label class="{{ $labelClass }}">Expected</label>
-                    <input type="date" name="expected_at"
-                           value="{{ old('expected_at', $purchase->expected_at?->toDateString()) }}" class="{{ $input }}">
-                </div>
+                    <div>
+                        <label for="purchase_date" class="{{ $labelClass }}">
+                            {{ $label }} date <span class="text-red-600" aria-hidden="true">*</span>
+                        </label>
+                        <input id="purchase_date" type="date" name="purchase_date" required
+                               value="{{ old('purchase_date', \Carbon\Carbon::parse($purchase->purchase_date)->toDateString()) }}"
+                               class="{{ $input }}">
+                    </div>
 
-                <div>
-                    <label class="{{ $labelClass }}">Supplier's reference</label>
-                    <input type="text" name="reference" maxlength="255"
-                           value="{{ old('reference', $purchase->reference) }}" class="{{ $input }}">
-                </div>
+                    <div>
+                        <label for="expected_at" class="{{ $labelClass }}">Expected</label>
+                        <input id="expected_at" type="date" name="expected_at"
+                               value="{{ old('expected_at', $purchase->expected_at?->toDateString()) }}" class="{{ $input }}">
+                    </div>
 
-                <div>
-                    <label class="{{ $labelClass }}">Paid on delivery ({{ currency() }})</label>
-                    <input type="number" step="0.01" min="0" name="amount_paid"
-                           value="{{ old('amount_paid', round((float) $purchase->amount_paid, 2)) }}" class="{{ $input }}">
-                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                        Anything paid later belongs on the supplier's account, not here.
-                    </p>
-                </div>
+                    <div>
+                        <label for="reference" class="{{ $labelClass }}">{{ $supplierLabel }}'s reference</label>
+                        <input id="reference" type="text" name="reference" maxlength="255"
+                               value="{{ old('reference', $purchase->reference) }}" class="{{ $input }}">
+                    </div>
 
-                <div class="md:col-span-2">
-                    <label class="{{ $labelClass }}">Note</label>
-                    <input type="text" name="note" value="{{ old('note', $purchase->note) }}" class="{{ $input }}">
+                    <div>
+                        <label for="amount_paid" class="{{ $labelClass }}">Paid on delivery ({{ currency() }})</label>
+                        <input id="amount_paid" type="number" step="0.01" min="0" name="amount_paid"
+                               value="{{ old('amount_paid', round((float) $purchase->amount_paid, 2)) }}"
+                               class="{{ $input }} text-right tabular-nums">
+                        <p class="{{ $hintClass }}">
+                            Anything paid later belongs on the {{ Str::lower($supplierLabel) }}'s account, not here.
+                        </p>
+                    </div>
+
+                    <div class="md:col-span-2">
+                        <label for="note" class="{{ $labelClass }}">Note</label>
+                        <input id="note" type="text" name="note" value="{{ old('note', $purchase->note) }}"
+                               class="{{ $input }}">
+                    </div>
                 </div>
-            </div>
+            </x-card>
 
             {{-- Lines --}}
-            <div class="{{ $card }}">
-                <h3 class="font-semibold mb-3">Items</h3>
-
-                <div class="overflow-x-auto">
-                    <table class="w-full text-sm">
-                        <thead class="bg-gray-100 dark:bg-gray-700 text-left">
-                            <tr>
-                                <th class="p-2">{{ $productLabel }}</th>
-                                <th class="p-2 w-28">Quantity</th>
-                                <th class="p-2 w-36">Unit cost</th>
-                                <th class="p-2 w-32 text-right">Total</th>
-                                <th class="p-2 w-20"></th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <template x-for="(row, index) in rows" :key="index">
-                                <tr class="border-b border-gray-200 dark:border-gray-700">
-                                    <td class="p-2">
-                                        {{-- Options are rendered server-side: an x-for inside a
-                                             select has not produced them yet when x-model
-                                             tries to select the row's current value. --}}
-                                        <select name="product_ids[]" x-model="row.product_id"
-                                                @change="onProductChange(row)" required class="{{ $input }}">
-                                            <option value="">-- Select {{ Str::lower($productLabel) }} --</option>
-                                            @foreach ($products as $option)
-                                                <option value="{{ $option->id }}">{{ $option->name }}</option>
-                                            @endforeach
-                                        </select>
-                                    </td>
-                                    <td class="p-2">
-                                        <input type="number" name="quantities[]" min="1" step="1" required
-                                               x-model="row.quantity" class="{{ $input }}">
-                                    </td>
-                                    <td class="p-2">
-                                        <input type="number" name="cost_prices[]" min="0" step="0.01" required
-                                               x-model="row.cost_price" class="{{ $input }}">
-                                    </td>
-                                    <td class="p-2 text-right" x-text="money(lineTotal(row))"></td>
-                                    <td class="p-2 text-right">
-                                        <button type="button" @click="removeRow(index)"
-                                                class="text-red-600 dark:text-red-400 hover:underline">Remove</button>
-                                    </td>
-                                </tr>
-                            </template>
-                            <tr x-show="rows.length === 0" style="display: none">
-                                <td colspan="5" class="p-4 text-center text-gray-500 dark:text-gray-400">
-                                    No items. Add at least one.
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-
-                <div class="flex flex-wrap justify-between items-center gap-3 mt-3">
+            <x-card title="Items" :padding="false">
+                <x-slot:actions>
                     <button type="button" @click="addRow()"
-                            class="bg-blue-600 hover:bg-blue-700 text-white text-xs px-3 py-2 rounded">+ Add item</button>
-                    <p class="font-semibold">Total: <span x-text="money(total)"></span></p>
-                </div>
-            </div>
+                            class="inline-flex min-h-touch items-center gap-1.5 rounded-md bg-white px-3 py-1.5 text-sm font-medium text-gray-700 ring-1 ring-gray-200 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-200 dark:ring-gray-700 dark:hover:bg-gray-700">
+                        <x-icon name="plus" size="4" />
+                        Add item
+                    </button>
+                </x-slot:actions>
 
-            <div class="flex justify-end gap-2">
+                <x-table>
+                    <x-slot:head>
+                        <tr>
+                            <th>{{ $productLabel }}</th>
+                            <th class="w-28 text-right">Quantity</th>
+                            <th class="w-36 text-right">Unit cost</th>
+                            <th class="w-32 text-right">Total</th>
+                            <th class="w-20"><span class="sr-only">Remove</span></th>
+                        </tr>
+                    </x-slot:head>
+
+                    <template x-for="(row, index) in rows" :key="index">
+                        <tr>
+                            <td>
+                                {{-- Options are rendered server-side: an x-for inside a
+                                     select has not produced them yet when x-model
+                                     tries to select the row's current value. --}}
+                                <select name="product_ids[]" x-model="row.product_id"
+                                        @change="onProductChange(row)" required
+                                        :aria-label="'Item ' + (index + 1) + ' ' + @js(Str::lower($productLabel))"
+                                        class="{{ $input }}">
+                                    <option value="">-- Select {{ Str::lower($productLabel) }} --</option>
+                                    @foreach ($products as $option)
+                                        <option value="{{ $option->id }}">{{ $option->name }}</option>
+                                    @endforeach
+                                </select>
+                            </td>
+                            <td>
+                                <input type="number" name="quantities[]" min="1" step="1" required
+                                       x-model="row.quantity"
+                                       :aria-label="'Item ' + (index + 1) + ' quantity'"
+                                       class="{{ $input }} text-right tabular-nums">
+                            </td>
+                            <td>
+                                <input type="number" name="cost_prices[]" min="0" step="0.01" required
+                                       x-model="row.cost_price"
+                                       :aria-label="'Item ' + (index + 1) + ' unit cost'"
+                                       class="{{ $input }} text-right tabular-nums">
+                            </td>
+                            <td class="text-right tabular-nums" x-text="money(lineTotal(row))"></td>
+                            <td class="text-right">
+                                <button type="button" @click="removeRow(index)"
+                                        :aria-label="'Remove item ' + (index + 1)"
+                                        class="inline-flex min-h-touch items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-red-600 ring-1 ring-red-200 hover:bg-red-50 dark:text-red-400 dark:ring-red-900 dark:hover:bg-red-950">
+                                    Remove
+                                </button>
+                            </td>
+                        </tr>
+                    </template>
+
+                    <tr x-show="rows.length === 0" x-cloak>
+                        <td colspan="5">
+                            <x-empty icon="box" title="No items" message="Add at least one." />
+                        </td>
+                    </tr>
+
+                    <x-slot:foot>
+                        <tr>
+                            <td colspan="3" class="text-right">Total</td>
+                            <td class="text-right tabular-nums" x-text="money(total)"></td>
+                            <td></td>
+                        </tr>
+                    </x-slot:foot>
+                </x-table>
+            </x-card>
+
+            <div class="flex flex-wrap justify-end gap-2">
                 <a href="{{ route('purchases.show', $purchase) }}"
-                   class="px-4 py-2 rounded border border-gray-300 dark:border-gray-600">Cancel</a>
-                <button type="submit" class="px-4 py-2 rounded bg-green-600 hover:bg-green-700 text-white">Save changes</button>
+                   class="inline-flex min-h-touch items-center gap-1.5 rounded-md bg-white px-4 py-2 text-sm font-medium text-gray-700 ring-1 ring-gray-200 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-200 dark:ring-gray-700 dark:hover:bg-gray-700">
+                    Cancel
+                </a>
+                <button type="submit"
+                        class="inline-flex min-h-touch items-center gap-1.5 rounded-md bg-primary-600 px-4 py-2 text-sm font-semibold text-white hover:bg-primary-700">
+                    Save changes
+                </button>
             </div>
         </form>
     </div>

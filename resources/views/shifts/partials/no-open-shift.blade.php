@@ -12,6 +12,10 @@
     save the query:
 
         @include('shifts.partials.no-open-shift', ['openShift' => $open])
+
+    It appears on both the till and the shifts screen, so it is styled as a
+    notice panel in the house style rather than as a page section: the host
+    page owns the heading above it.
 --}}
 @php
     $openShift = $openShift
@@ -21,23 +25,35 @@
 @endphp
 
 @if (auth()->check() && !$openShift)
-    <div class="bg-white dark:bg-gray-800 rounded shadow p-4 border-l-4 border-yellow-500">
-        <div class="flex flex-wrap items-center justify-between gap-3">
-            <div>
-                <p class="font-semibold text-gray-800 dark:text-gray-100">No shift is open</p>
-                <p class="text-sm text-gray-500 dark:text-gray-400">
-                    Open one with the cash already in the drawer, so the end-of-day count has something to balance against.
-                </p>
+    <div class="rounded-xl bg-amber-50 p-4 ring-1 ring-amber-200 dark:bg-amber-950 dark:ring-amber-800">
+        <div class="flex flex-wrap items-start justify-between gap-4">
+            <div class="flex min-w-0 items-start gap-3">
+                <span class="mt-0.5 shrink-0 text-amber-600 dark:text-amber-400">
+                    <x-icon name="clock" size="5" />
+                </span>
+                <div class="min-w-0">
+                    <p class="font-semibold text-amber-900 dark:text-amber-100">No shift is open</p>
+                    <p class="mt-0.5 text-sm text-amber-800 dark:text-amber-200">
+                        Open one with the cash already in the drawer, so the end-of-day count has something to balance against.
+                    </p>
+                </div>
             </div>
 
-            <form method="POST" action="{{ route('shifts.open') }}" class="flex items-end gap-2">
+            <form method="POST" action="{{ route('shifts.open') }}" class="flex flex-wrap items-end gap-2">
                 @csrf
-                <label class="text-xs text-gray-500 dark:text-gray-400">
-                    Opening float ({{ currency() }})
-                    <input type="number" name="opening_float" step="0.01" min="0" value="0" required
-                           class="mt-1 block w-32 rounded-md border border-gray-300 dark:border-gray-600 px-2 py-1 bg-white dark:bg-gray-700">
-                </label>
-                <button class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded">Open shift</button>
+                <div>
+                    <label for="no-open-shift-float" class="mb-1 block text-xs font-medium text-amber-800 dark:text-amber-200">
+                        Opening float ({{ currency() }})
+                    </label>
+                    <input id="no-open-shift-float" type="number" name="opening_float" step="0.01" min="0"
+                           value="0" required inputmode="decimal"
+                           class="min-h-touch w-32 rounded-md border-gray-300 bg-white text-right tabular-nums shadow-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white">
+                </div>
+
+                <button type="submit"
+                        class="inline-flex min-h-touch items-center gap-1.5 rounded-md bg-primary-600 px-4 py-2 text-sm font-semibold text-white hover:bg-primary-700">
+                    Open shift
+                </button>
             </form>
         </div>
     </div>

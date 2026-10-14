@@ -2,20 +2,57 @@
 
 @section('title', 'Count Sheet ' . $stockTake->reference)
 
+@php
+    $decimals = (int) setting('currency_decimals', config('sectors.currency.decimals'));
+    $editable = $stockTake->isEditable() && auth()->user()->can('update', $stockTake);
+
+    // The lines the browser needs to show a running variance while staff type.
+    $lines = $stockTake->items->map(fn($item) => [
+        'id' => $item->id,
+        'system' => (int) $item->system_quantity,
+        'cost' => (float) $item->cost_price,
+        'counted' => $item->counted_quantity === null ? '' : (string) $item->counted_quantity,
+    ])->values();
+
+    // money() puts the symbol first, so a bare negative would read "<symbol>-100".
+    $amount = fn($value) => ($value < 0 ? '-' : '') . money(abs($value));
+
+    /*
+    | Three of the tiles below count up live as staff type, which x-stat has no
+    | prop for. x-stat prints its value with {{ }}, and e() hands an Htmlable
+    | straight through, so the Alpine-bound figure can sit inside the component's
+    | own styling instead of a hand-rolled copy of it.
+    */
+    $countedTile = new \Illuminate\Support\HtmlString(
+        '<span x-text="countedLines()">' . e($summary['counted']) . '</span> / ' . e($summary['lines'])
+    );
+
+    $unitsTile = new \Illuminate\Support\HtmlString(
+        '<span x-text="totalUnits()">' . e($summary['variance_units']) . '</span>'
+    );
+
+    // Red for a loss, green for a gain - the same colouring as the Variance column.
+    $valueTile = new \Illuminate\Support\HtmlString(
+        '<span :class="totalValue() < 0 ? \'text-red-700 dark:text-red-400\''
+        . ' : (totalValue() > 0 ? \'text-green-700 dark:text-green-400\' : \'\')"'
+        . ' x-text="money(totalValue())">' . e($amount($summary['variance_value'])) . '</span>'
+    );
+
+    $shrinkageTile = new \Illuminate\Support\HtmlString(
+        '<span class="text-red-700 dark:text-red-400">' . e($amount($summary['shrinkage_value'])) . '</span>'
+    );
+
+    $heading = collect([
+        'Counted by ' . ($stockTake->user->name ?? 'unknown')
+            . ', started ' . $stockTake->created_at->format('d M Y H:i'),
+        $stockTake->approved_at
+            ? 'approved by ' . ($stockTake->approver->name ?? 'unknown')
+                . ' on ' . $stockTake->approved_at->format('d M Y H:i')
+            : null,
+    ])->filter()->implode(' · ');
+@endphp
+
 @section('content')
-    @php
-        $decimals = (int) setting('currency_decimals', config('sectors.currency.decimals'));
-        $editable = $stockTake->isEditable() && auth()->user()->can('update', $stockTake);
-
-        // The lines the browser needs to show a running variance while staff type.
-        $lines = $stockTake->items->map(fn($item) => [
-            'id' => $item->id,
-            'system' => (int) $item->system_quantity,
-            'cost' => (float) $item->cost_price,
-            'counted' => $item->counted_quantity === null ? '' : (string) $item->counted_quantity,
-        ])->values();
-    @endphp
-
     {{-- Staff count on paper, so this page has to print as a usable sheet. --}}
     <style>
         @media print {
@@ -28,8 +65,59 @@
         }
     </style>
 
-    <div class="space-y-4"
-         x-data="{
+    <x-page-header :title="'Count sheet ' . $stockTake->reference" :subtitle="$heading"
+                   :back="route('stock-takes.index')" back-label="Stock takes">
+        <x-slot:actions>
+            @include('stock-takes._status', ['status' => $stockTake->status, 'size' => 'md'])
+
+            <span class="no-print flex flex-wrap items-center gap-2">
+                <button type="button" onclick="window.print()"
+                        class="inline-flex min-h-touch items-center gap-1.5 rounded-md bg-white px-4 py-2 text-sm font-medium text-gray-700 ring-1 ring-gray-200 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-200 dark:ring-gray-700 dark:hover:bg-gray-700">
+                    <x-icon name="download" size="4" />
+                    Print sheet
+                </button>
+
+                @can('approve', $stockTake)
+                    <form method="POST" action="{{ route('stock-takes.approve', $stockTake) }}"
+                          onsubmit="return confirm('Approve this count? Stock will be corrected and cannot be un-approved.')">
+                        @csrf
+                        <button type="submit"
+                                class="inline-flex min-h-touch items-center gap-1.5 rounded-md bg-primary-600 px-4 py-2 text-sm font-semibold text-white hover:bg-primary-700">
+                            <x-icon name="check-circle" size="4" />
+                            Approve &amp; correct stock
+                        </button>
+                    </form>
+                @endcan
+
+                @can('delete', $stockTake)
+                    <form method="POST" action="{{ route('stock-takes.destroy', $stockTake) }}"
+                          onsubmit="return confirm('Cancel this count sheet?')">
+                        @csrf @method('DELETE')
+                        <button type="submit"
+                                class="inline-flex min-h-touch items-center gap-1.5 rounded-md bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700">
+                            <x-icon name="x" size="4" />
+                            Cancel sheet
+                        </button>
+                    </form>
+                @endcan
+            </span>
+        </x-slot:actions>
+    </x-page-header>
+
+    {{-- Why the Approve button may be missing: say it rather than leave a gap. --}}
+    @if ($stockTake->isEditable() && !$canApprove)
+        <div class="no-print mb-4 flex items-start gap-2.5 rounded-xl bg-white p-4 shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
+            <span class="mt-0.5 shrink-0 text-primary-600 dark:text-primary-400">
+                <x-icon name="info" size="5" />
+            </span>
+            <p class="text-sm text-gray-600 dark:text-gray-300">
+                A count has to be approved by somebody other than the person who counted it.
+                Ask another manager or an admin to approve this sheet.
+            </p>
+        </div>
+    @endif
+
+    <div x-data="{
              blind: false,
              lines: @js($lines),
              symbol: @js(currency()),
@@ -55,191 +143,135 @@
                  return this.lines.filter(l => l.counted !== '' &amp;&amp; l.counted !== null).length;
              },
              money(value) {
-                 return this.symbol + Number(value).toLocaleString(undefined, {
+                 return (value < 0 ? '-' : '') + this.symbol + Math.abs(Number(value)).toLocaleString(undefined, {
                      minimumFractionDigits: this.decimals, maximumFractionDigits: this.decimals
                  });
              },
          }">
 
-        {{-- Header --}}
-        <div class="bg-white dark:bg-gray-800 rounded shadow p-4 print-sheet">
-            <div class="flex flex-wrap justify-between gap-4">
-                <div>
-                    <div class="flex items-center gap-3">
-                        <h2 class="text-lg font-semibold font-mono">{{ $stockTake->reference }}</h2>
-                        @include('stock-takes._status', ['status' => $stockTake->status])
-                    </div>
-                    <p class="text-sm text-gray-600 dark:text-gray-300 mt-1">
-                        Counted by {{ $stockTake->user->name ?? 'unknown' }},
-                        started {{ $stockTake->created_at->format('d M Y H:i') }}
-                        @if ($stockTake->approved_at)
-                            &middot; approved by {{ $stockTake->approver->name ?? 'unknown' }}
-                            on {{ $stockTake->approved_at->format('d M Y H:i') }}
-                        @endif
-                    </p>
-                    @if ($stockTake->note)
-                        <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">{{ $stockTake->note }}</p>
-                    @endif
-                </div>
-
-                <div class="flex flex-wrap items-start gap-2 no-print">
-                    <label class="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300 px-2 py-2">
-                        <input type="checkbox" x-model="blind" class="rounded border-gray-300 dark:border-gray-600">
-                        Blind count
-                    </label>
-                    <button type="button" onclick="window.print()"
-                            class="px-4 py-2 rounded border border-gray-300 dark:border-gray-600 text-sm hover:bg-gray-50 dark:hover:bg-gray-700">
-                        Print sheet
-                    </button>
-
-                    @can('approve', $stockTake)
-                        <form method="POST" action="{{ route('stock-takes.approve', $stockTake) }}"
-                              onsubmit="return confirm('Approve this count? Stock will be corrected and cannot be un-approved.')">
-                            @csrf
-                            <button type="submit" class="px-4 py-2 rounded bg-green-600 hover:bg-green-700 text-white text-sm">
-                                Approve &amp; correct stock
-                            </button>
-                        </form>
-                    @endcan
-
-                    @can('delete', $stockTake)
-                        <form method="POST" action="{{ route('stock-takes.destroy', $stockTake) }}"
-                              onsubmit="return confirm('Cancel this count sheet?')">
-                            @csrf @method('DELETE')
-                            <button type="submit" class="px-4 py-2 rounded border border-red-300 text-red-600 dark:border-red-800 dark:text-red-400 text-sm">
-                                Cancel sheet
-                            </button>
-                        </form>
-                    @endcan
-                </div>
-            </div>
-
-            {{-- Why the Approve button may be missing: say it rather than leave a gap. --}}
-            @if ($stockTake->isEditable() && !$canApprove)
-                <p class="mt-3 text-xs text-gray-500 dark:text-gray-400 no-print">
-                    A count has to be approved by somebody other than the person who counted it.
-                    Ask another manager or an admin to approve this sheet.
-                </p>
-            @endif
-        </div>
-
         {{-- Summary: the figures a manager is actually asked about. --}}
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div class="bg-white dark:bg-gray-800 rounded shadow p-4">
-                <div class="text-xs uppercase text-gray-500 dark:text-gray-400">Lines counted</div>
-                <div class="text-xl font-semibold">
-                    <span x-text="countedLines()">{{ $summary['counted'] }}</span> / {{ $summary['lines'] }}
-                </div>
-            </div>
-            <div class="bg-white dark:bg-gray-800 rounded shadow p-4">
-                <div class="text-xs uppercase text-gray-500 dark:text-gray-400">Variance (units)</div>
-                <div class="text-xl font-semibold" x-text="totalUnits()">{{ $summary['variance_units'] }}</div>
-            </div>
-            <div class="bg-white dark:bg-gray-800 rounded shadow p-4">
-                <div class="text-xs uppercase text-gray-500 dark:text-gray-400">Variance value</div>
-                <div class="text-xl font-semibold"
-                     :class="totalValue() < 0 ? 'text-red-600 dark:text-red-400' : (totalValue() > 0 ? 'text-green-600 dark:text-green-400' : '')"
-                     x-text="money(totalValue())">{{ money($summary['variance_value']) }}</div>
-            </div>
-            <div class="bg-white dark:bg-gray-800 rounded shadow p-4">
-                <div class="text-xs uppercase text-gray-500 dark:text-gray-400">Shrinkage (losses only)</div>
-                <div class="text-xl font-semibold text-red-600 dark:text-red-400">{{ money($summary['shrinkage_value']) }}</div>
-                <div class="text-xs text-gray-500 dark:text-gray-400">{{ $summary['short_lines'] }} short, {{ $summary['over_lines'] }} over</div>
-            </div>
+        <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
+            <x-stat label="Lines counted" :value="$countedTile" icon="clipboard-check" />
+            <x-stat label="Variance (units)" :value="$unitsTile" icon="scale" />
+            <x-stat label="Variance value" :value="$valueTile" icon="coins" />
+            <x-stat label="Shrinkage (losses only)" :value="$shrinkageTile" icon="alert-triangle"
+                    :hint="$summary['short_lines'] . ' short, ' . $summary['over_lines'] . ' over'" />
         </div>
 
         {{-- The sheet --}}
-        <form method="POST" action="{{ route('stock-takes.update', $stockTake) }}"
-              class="bg-white dark:bg-gray-800 rounded shadow p-4 print-sheet">
+        <form method="POST" action="{{ route('stock-takes.update', $stockTake) }}">
             @csrf @method('PUT')
 
-            <div class="overflow-x-auto">
-                <table class="w-full table-auto text-sm">
-                    <thead class="bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300">
-                        <tr>
-                            <th class="p-2 text-left">{{ term('product') }}</th>
-                            <th class="p-2 text-left">SKU</th>
-                            <th class="p-2 text-right">System</th>
-                            <th class="p-2 text-right">Counted</th>
-                            <th class="p-2 text-right">Variance</th>
-                            <th class="p-2 text-right">Unit cost</th>
-                            <th class="p-2 text-right">Variance value</th>
-                            <th class="p-2 text-left">Note</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach ($stockTake->items as $index => $item)
-                            <tr class="border-t dark:border-gray-700">
-                                <td class="p-2">
-                                    {{ $item->product->name ?? 'Deleted item' }}
-                                    <span class="text-xs text-gray-500 dark:text-gray-400">{{ $item->product->unit ?? '' }}</span>
-                                </td>
-                                <td class="p-2 font-mono text-xs">{{ $item->product->sku ?? '-' }}</td>
-                                <td class="p-2 text-right" :class="blind ? 'print:invisible' : ''">
-                                    {{ $item->system_quantity }}
-                                </td>
-                                <td class="p-2 text-right">
-                                    @if ($editable)
-                                        <input type="number" min="0" step="1"
-                                               name="counts[{{ $item->id }}]"
-                                               x-model="lines[{{ $index }}].counted"
-                                               class="count-box w-24 px-2 py-1 text-right border rounded dark:bg-gray-900 dark:border-gray-600">
-                                    @else
-                                        {{ $item->counted_quantity ?? '-' }}
-                                    @endif
-                                </td>
-                                <td class="p-2 text-right font-medium"
-                                    :class="{
-                                        'text-red-600 dark:text-red-400': variance(lines[{{ $index }}]) < 0,
-                                        'text-green-600 dark:text-green-400': variance(lines[{{ $index }}]) > 0,
-                                    }"
-                                    x-text="varianceText(lines[{{ $index }}])">{{ $item->isCounted() ? $item->variance : '-' }}</td>
-                                <td class="p-2 text-right">{{ money($item->cost_price) }}</td>
-                                <td class="p-2 text-right" x-text="money(varianceValue(lines[{{ $index }}]))">
-                                    {{ money($item->isCounted() ? $item->variance_value : 0) }}
-                                </td>
-                                <td class="p-2">
-                                    @if ($editable)
-                                        <input type="text" maxlength="255" name="notes[{{ $item->id }}]"
-                                               value="{{ $item->note }}" placeholder="e.g. 2 broken"
-                                               class="w-40 px-2 py-1 border rounded dark:bg-gray-900 dark:border-gray-600">
-                                    @else
-                                        {{ $item->note }}
-                                    @endif
-                                </td>
-                            </tr>
-                        @endforeach
-                    </tbody>
-                </table>
-            </div>
+            <x-card :title="number_format($summary['lines']) . ' ' . Str::plural('line', $summary['lines'])"
+                    :subtitle="$stockTake->note" :padding="false" class="print-sheet mt-4">
+                <x-slot:actions>
+                    <label class="no-print flex min-h-touch cursor-pointer items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
+                        <input type="checkbox" x-model="blind"
+                               class="rounded border-gray-300 text-primary-600 dark:border-gray-600 dark:bg-gray-900">
+                        Blind count
+                    </label>
+                </x-slot:actions>
 
-            @if ($editable)
-                <div class="flex flex-wrap justify-end gap-2 mt-4 no-print">
-                    <p class="text-xs text-gray-500 dark:text-gray-400 mr-auto self-center">
-                        A blank box means "not counted" - which is not the same as counting zero.
-                        Nothing moves until the sheet is approved.
-                    </p>
-                    <button type="submit" name="action" value="save"
-                            class="px-4 py-2 rounded border border-gray-300 dark:border-gray-600 text-sm hover:bg-gray-50 dark:hover:bg-gray-700">
-                        Save counts
-                    </button>
-                    <button type="submit" name="action" value="submit"
-                            class="px-4 py-2 rounded bg-blue-600 hover:bg-blue-700 text-white text-sm">
-                        Submit for approval
-                    </button>
-                </div>
-            @endif
+                <x-table>
+                    <x-slot:head>
+                        <tr>
+                            <th>{{ term('product') }}</th>
+                            <th>SKU</th>
+                            <th class="text-right">System</th>
+                            <th class="text-right">Counted</th>
+                            <th class="text-right">Variance</th>
+                            <th class="text-right">Unit cost</th>
+                            <th class="text-right">Variance value</th>
+                            <th>Note</th>
+                        </tr>
+                    </x-slot:head>
+
+                    @foreach ($stockTake->items as $index => $item)
+                        @php $name = $item->product->name ?? 'Deleted item'; @endphp
+                        <tr>
+                            <td>
+                                <span class="font-medium">{{ $name }}</span>
+                                @if ($item->product->unit ?? null)
+                                    <span class="block text-xs text-gray-500 dark:text-gray-400">{{ $item->product->unit }}</span>
+                                @endif
+                            </td>
+                            <td class="whitespace-nowrap font-mono text-xs text-gray-500 dark:text-gray-400">
+                                {{ $item->product->sku ?? '-' }}
+                            </td>
+                            <td class="text-right tabular-nums" :class="blind ? 'print:invisible' : ''">
+                                {{ $item->system_quantity }}
+                            </td>
+                            <td class="text-right tabular-nums">
+                                @if ($editable)
+                                    {{-- A long data-entry column on a tablet: the box has to be tappable. --}}
+                                    <input type="number" min="0" step="1"
+                                           name="counts[{{ $item->id }}]"
+                                           x-model="lines[{{ $index }}].counted"
+                                           aria-label="Counted quantity for {{ $name }}"
+                                           class="count-box min-h-touch w-24 rounded-md border-gray-300 bg-white px-2 py-1.5 text-right text-sm tabular-nums shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100">
+                                @else
+                                    {{ $item->counted_quantity ?? '-' }}
+                                @endif
+                            </td>
+                            <td class="text-right font-medium tabular-nums"
+                                :class="{
+                                    'text-red-700 dark:text-red-400': variance(lines[{{ $index }}]) < 0,
+                                    'text-green-700 dark:text-green-400': variance(lines[{{ $index }}]) > 0,
+                                }"
+                                x-text="varianceText(lines[{{ $index }}])">{{ $item->isCounted() ? $item->variance : '-' }}</td>
+                            <td class="text-right tabular-nums text-gray-500 dark:text-gray-400">
+                                {{ money($item->cost_price) }}
+                            </td>
+                            <td class="text-right tabular-nums"
+                                x-text="money(varianceValue(lines[{{ $index }}]))">
+                                {{ $amount($item->isCounted() ? $item->variance_value : 0) }}
+                            </td>
+                            <td>
+                                @if ($editable)
+                                    <input type="text" maxlength="255" name="notes[{{ $item->id }}]"
+                                           value="{{ $item->note }}" placeholder="e.g. 2 broken"
+                                           aria-label="Note for {{ $name }}"
+                                           class="min-h-touch w-40 rounded-md border-gray-300 bg-white px-2 py-1.5 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100">
+                                @else
+                                    <span class="text-gray-500 dark:text-gray-400">{{ $item->note }}</span>
+                                @endif
+                            </td>
+                        </tr>
+                    @endforeach
+                </x-table>
+
+                @if ($editable)
+                    <x-slot:footer>
+                        <div class="no-print flex flex-wrap items-center justify-end gap-2">
+                            <p class="mr-auto text-xs text-gray-500 dark:text-gray-400">
+                                A blank box means "not counted" - which is not the same as counting zero.
+                                Nothing moves until the sheet is approved.
+                            </p>
+
+                            <button type="submit" name="action" value="save"
+                                    class="inline-flex min-h-touch items-center gap-1.5 rounded-md bg-white px-4 py-2 text-sm font-medium text-gray-700 ring-1 ring-gray-200 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-200 dark:ring-gray-700 dark:hover:bg-gray-700">
+                                Save counts
+                            </button>
+
+                            <button type="submit" name="action" value="submit"
+                                    class="inline-flex min-h-touch items-center gap-1.5 rounded-md bg-primary-600 px-4 py-2 text-sm font-semibold text-white hover:bg-primary-700">
+                                <x-icon name="upload" size="4" />
+                                Submit for approval
+                            </button>
+                        </div>
+                    </x-slot:footer>
+                @endif
+            </x-card>
         </form>
 
         @if ($stockTake->isApproved())
-            <div class="bg-white dark:bg-gray-800 rounded shadow p-4 no-print">
-                <h3 class="font-semibold mb-2">Corrections made by this count</h3>
+            <x-card title="Corrections made by this count" class="no-print mt-4">
                 <p class="text-sm text-gray-600 dark:text-gray-300">
                     {{ $stockTake->adjustments()->count() }} adjustment(s) were written, each with its own inventory
                     movement. <a href="{{ route('adjustments.index', ['reason' => 'count']) }}"
-                                 class="text-blue-600 dark:text-blue-400 hover:underline">See the adjustment history</a>.
+                                 class="font-medium text-primary-600 hover:underline dark:text-primary-400">See the adjustment history</a>.
                 </p>
-            </div>
+            </x-card>
         @endif
     </div>
 @endsection

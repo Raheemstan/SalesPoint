@@ -1,35 +1,78 @@
-{{-- Store tab: who the shop is. Printed on receipts and shown in the header. --}}
-<x-section title="Business information">
-    <div class="grid md:grid-cols-2 gap-4">
-        <x-input name="store_name" label="Store Name" :value="setting('store_name')" />
-        <x-input name="store_phone" label="Phone" :value="setting('store_phone')" />
-        <x-input name="store_motto" label="Store Motto" :value="setting('store_motto')" />
-        <x-input name="store_email" label="Email" type="email" :value="setting('store_email')" />
-        <x-input name="store_address" label="Address" :value="setting('store_address')" />
+@php
+    /*
+    | Store tab: who the shop is. Printed on receipts and shown in the header.
+    |
+    | The control classes are written out here rather than taken from x-input:
+    | that component still carries the old blue focus ring and prints its own
+    | label, and every settings field has to look like every other field in the
+    | app (see reports/partials/filter-bar for the same strings).
+    */
+    $label = 'mb-1 block text-sm font-medium text-gray-700 dark:text-gray-200';
+    $control = 'w-full min-h-touch rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm'
+        . ' focus:border-primary-500 focus:ring-primary-500'
+        . ' dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100';
+    $hint = 'mt-1 text-xs text-gray-500 dark:text-gray-400';
+    $error = 'mt-1 text-xs text-red-600 dark:text-red-400';
+
+    $fields = [
+        'store_name' => 'Store name',
+        'store_phone' => 'Phone',
+        'store_motto' => 'Store motto',
+        'store_email' => 'Email',
+        'store_address' => 'Address',
+    ];
+@endphp
+
+<x-card title="Business information" subtitle="Printed on every receipt and shown in the app header.">
+    <div class="grid gap-4 sm:grid-cols-2">
+        @foreach ($fields as $name => $text)
+            <div>
+                <label for="{{ $name }}" class="{{ $label }}">{{ $text }}</label>
+                <input type="{{ $name === 'store_email' ? 'email' : 'text' }}"
+                       id="{{ $name }}" name="{{ $name }}"
+                       value="{{ old($name, setting($name)) }}"
+                       class="{{ $control }}">
+                @error($name)
+                    <p class="{{ $error }}">{{ $message }}</p>
+                @enderror
+            </div>
+        @endforeach
 
         {{-- Alpine, so the chosen file is shown before it is uploaded. --}}
         <div x-data="{ preview: '{{ setting('store_logo') ? asset('storage/' . setting('store_logo')) : '' }}' }">
-            <label for="store_logo" class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Logo</label>
+            <label for="store_logo" class="{{ $label }}">Logo</label>
             <input type="file" name="store_logo" id="store_logo" accept="image/jpeg,image/png"
                 @change="const f = $event.target.files[0];
                          if (f) { const r = new FileReader(); r.onload = e => preview = e.target.result; r.readAsDataURL(f); }"
-                class="w-full text-sm text-gray-800 dark:text-gray-200" />
-            <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">JPG or PNG, up to 5 MB.</p>
-            <img x-show="preview" :src="preview" x-cloak alt="Logo preview" class="mt-2 h-16 w-auto object-contain">
+                class="block w-full text-sm text-gray-600 dark:text-gray-300
+                       file:mr-3 file:min-h-touch file:rounded-md file:border-0 file:bg-primary-600
+                       file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white
+                       hover:file:bg-primary-700" />
+            <p class="{{ $hint }}">JPG or PNG, up to 5 MB.</p>
+            <img x-show="preview" :src="preview" x-cloak alt="Logo preview"
+                 class="mt-2 h-16 w-auto rounded-md object-contain ring-1 ring-gray-200 dark:ring-gray-700">
             @error('store_logo')
-                <p class="text-red-500 text-xs mt-1">{{ $message }}</p>
+                <p class="{{ $error }}">{{ $message }}</p>
             @enderror
         </div>
     </div>
-</x-section>
+</x-card>
 
-<x-section title="Appearance">
-    <div class="md:w-1/2">
-        <x-select name="theme" label="Preferred theme"
-            :options="['light' => 'Light', 'dark' => 'Dark', 'system' => 'Follow the device']"
-            :value="setting('theme', 'system')" />
-        <p class="text-xs text-gray-500 dark:text-gray-400 -mt-2">
+<x-card title="Appearance" subtitle="Light or dark, for every screen in the app.">
+    <div class="sm:max-w-sm">
+        <label for="theme" class="{{ $label }}">Preferred theme</label>
+        <select id="theme" name="theme" class="{{ $control }}">
+            @foreach (['light' => 'Light', 'dark' => 'Dark', 'system' => 'Follow the device'] as $value => $text)
+                <option value="{{ $value }}" @selected(old('theme', setting('theme', 'system')) === $value)>
+                    {{ $text }}
+                </option>
+            @endforeach
+        </select>
+        <p class="{{ $hint }}">
             The switcher in the header changes this too, for whoever is signed in.
         </p>
+        @error('theme')
+            <p class="{{ $error }}">{{ $message }}</p>
+        @enderror
     </div>
-</x-section>
+</x-card>

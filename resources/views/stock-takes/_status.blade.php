@@ -1,11 +1,19 @@
-{{-- One status pill, so the list and the sheet itself can never drift apart. --}}
+{{--
+    One status pill, so the list and the sheet itself can never drift apart.
+
+    This is an x-badge now rather than its own hand-written span: every status in
+    the app is the same shape, the same sizes and the same dark-mode colours.
+
+      @include('stock-takes._status', ['status' => $stockTake->status])
+      @include('stock-takes._status', ['status' => $stockTake->status, 'size' => 'md'])
+--}}
 @php
-    $classes = match ($status) {
-        \App\Models\StockTake::STATUS_APPROVED => 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
-        \App\Models\StockTake::STATUS_SUBMITTED => 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200',
-        \App\Models\StockTake::STATUS_CANCELLED => 'bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300',
-        default => 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
+    $variant = match ($status) {
+        \App\Models\StockTake::STATUS_APPROVED => 'green',
+        \App\Models\StockTake::STATUS_SUBMITTED => 'amber',
+        \App\Models\StockTake::STATUS_CANCELLED => 'gray',
+        default => 'blue',
     };
 @endphp
 
-<span class="px-2 py-0.5 rounded text-xs font-medium {{ $classes }}">{{ ucfirst($status) }}</span>
+<x-badge :variant="$variant" :size="$size ?? 'sm'" dot>{{ ucfirst($status) }}</x-badge>

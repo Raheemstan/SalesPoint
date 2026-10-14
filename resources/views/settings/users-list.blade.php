@@ -1,6 +1,16 @@
 @php
     $me = auth()->id();
     $activeAdmins = $users->filter(fn ($u) => $u->role === 'admin' && $u->isActive())->count();
+    $deactivated = $users->filter(fn ($u) => ! $u->isActive())->count();
+
+    // A role is a status, so it gets a pill like every other status in the app.
+    $roleVariant = [
+        'admin' => 'purple',
+        'manager' => 'blue',
+        'cashier' => 'teal',
+    ];
+
+    $rowAction = 'font-medium text-primary-600 hover:underline dark:text-primary-400';
 @endphp
 
 {{--
@@ -11,77 +21,80 @@
     disabled to match, so an admin is not invited to click something that will
     be refused.
 --}}
-<div class="flex flex-wrap items-center justify-between gap-2 mb-4">
-    <div>
-        <h3 class="text-xl font-semibold text-gray-700 dark:text-gray-200">Users</h3>
-        <p class="text-xs text-gray-500 dark:text-gray-400">
-            {{ $users->count() }} {{ Str::plural('account', $users->count()) }},
-            {{ $activeAdmins }} active {{ Str::plural('admin', $activeAdmins) }}.
-            Deactivating keeps a person's history and stops them signing in.
-        </p>
-    </div>
-    <button type="button" id="open-user-modal" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded">
-        + Add User
-    </button>
+<div class="grid grid-cols-2 gap-4 lg:grid-cols-3">
+    <x-stat label="Accounts" :value="number_format($users->count())" icon="users" />
+    <x-stat label="Active admins" :value="number_format($activeAdmins)" icon="key"
+            :hint="$activeAdmins === 1 ? 'the last one cannot be locked out' : null" />
+    <x-stat label="Deactivated" :value="number_format($deactivated)" icon="x-circle"
+            :hint="$deactivated === 0 ? 'everyone can sign in' : 'history kept, sign-in blocked'" />
 </div>
 
-<div class="overflow-x-auto">
-    <table class="w-full table-auto border-collapse text-sm dark:text-gray-200">
-        <thead>
-            <tr class="bg-gray-100 dark:bg-gray-700">
-                <th class="p-2 text-left">Name</th>
-                <th class="p-2 text-left">Email</th>
-                <th class="p-2 text-left">Role</th>
-                <th class="p-2 text-left">Status</th>
-                <th class="p-2 text-left">Last signed in</th>
-                <th class="p-2 text-right">Actions</th>
+<x-card title="Users" subtitle="Deactivating keeps a person's history and stops them signing in." :padding="false">
+    <x-slot:actions>
+        <button type="button" id="open-user-modal"
+                class="inline-flex min-h-touch items-center gap-1.5 rounded-md bg-primary-600 px-4 py-2 text-sm font-semibold text-white hover:bg-primary-700">
+            <x-icon name="plus" size="4" />
+            Add User
+        </button>
+    </x-slot:actions>
+
+    <x-table>
+        <x-slot:head>
+            <tr>
+                <th>Name</th>
+                <th>Email</th>
+                <th>Role</th>
+                <th>Status</th>
+                <th>Last signed in</th>
+                <th class="text-right">Actions</th>
             </tr>
-        </thead>
-        <tbody>
-            @foreach ($users as $user)
-                @php $isMe = $user->id === $me; @endphp
-                <tr class="border-b border-gray-100 dark:border-gray-700 {{ $user->isActive() ? '' : 'opacity-60' }}">
-                    <td class="p-2">
-                        {{ $user->name }}
-                        @if ($isMe)
-                            <span class="text-xs text-gray-400">(you)</span>
-                        @endif
-                        @if ($user->hasTwoFactorEnabled())
-                            <span class="ml-1 px-1.5 py-0.5 rounded text-xs bg-indigo-100 text-indigo-800
-                                         dark:bg-indigo-900 dark:text-indigo-200" title="Two-factor authentication is on">2FA</span>
-                        @endif
-                    </td>
-                    <td class="p-2 break-all">{{ $user->email }}</td>
-                    <td class="p-2 capitalize">{{ $user->role }}</td>
-                    <td class="p-2">
-                        @if ($user->isActive())
-                            <span class="px-2 py-0.5 rounded text-xs bg-green-100 text-green-800
-                                         dark:bg-green-900 dark:text-green-200">Active</span>
-                        @else
-                            <span class="px-2 py-0.5 rounded text-xs bg-gray-200 text-gray-700
-                                         dark:bg-gray-600 dark:text-gray-200">Deactivated</span>
-                        @endif
-                    </td>
-                    <td class="p-2 text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">
-                        {{ $user->last_login_at?->format('d M Y H:i') ?? 'Never' }}
-                    </td>
-                    <td class="p-2 text-right whitespace-nowrap space-x-2">
-                        <button type="button"
-                            class="edit-user text-blue-600 dark:text-blue-400 hover:underline"
+        </x-slot:head>
+
+        @forelse ($users as $user)
+            @php $isMe = $user->id === $me; @endphp
+            <tr class="{{ $user->isActive() ? '' : 'opacity-60' }}">
+                <td>
+                    <span class="font-medium">{{ $user->name }}</span>
+                    @if ($isMe)
+                        <span class="text-xs text-gray-500 dark:text-gray-400">(you)</span>
+                    @endif
+                    @if ($user->hasTwoFactorEnabled())
+                        <x-badge variant="indigo" size="sm" class="ml-1"
+                                 title="Two-factor authentication is on">2FA</x-badge>
+                    @endif
+                </td>
+                <td class="break-all text-gray-500 dark:text-gray-400">{{ $user->email }}</td>
+                <td>
+                    <x-badge :variant="$roleVariant[$user->role] ?? 'gray'" size="sm">
+                        {{ ucfirst($user->role) }}
+                    </x-badge>
+                </td>
+                <td>
+                    @if ($user->isActive())
+                        <x-badge variant="green" size="sm" dot>Active</x-badge>
+                    @else
+                        <x-badge variant="gray" size="sm" dot>Deactivated</x-badge>
+                    @endif
+                </td>
+                <td class="whitespace-nowrap text-gray-500 dark:text-gray-400">
+                    {{ $user->last_login_at?->format('d M Y H:i') ?? 'Never' }}
+                </td>
+                <td class="text-right">
+                    <div class="flex flex-wrap items-center justify-end gap-x-3 gap-y-1">
+                        <button type="button" class="edit-user {{ $rowAction }}"
                             data-action="{{ route('settings.users.update', $user) }}"
                             data-name="{{ $user->name }}"
                             data-email="{{ $user->email }}"
                             data-role="{{ $user->role }}">Edit</button>
 
-                        <button type="button"
-                            class="reset-password text-blue-600 dark:text-blue-400 hover:underline"
+                        <button type="button" class="reset-password {{ $rowAction }}"
                             data-action="{{ route('settings.users.password', $user) }}"
                             data-name="{{ $user->name }}">Reset password</button>
 
                         @if (!$isMe)
                             <form action="{{ route('settings.users.status', $user) }}" method="POST" class="inline">
                                 @csrf
-                                <button class="text-amber-600 dark:text-amber-400 hover:underline"
+                                <button class="font-medium text-amber-600 hover:underline dark:text-amber-400"
                                     onclick="return confirm('{{ $user->isActive()
                                         ? addslashes($user->name) . ' will no longer be able to sign in. Their history stays. Continue?'
                                         : 'Let ' . addslashes($user->name) . ' sign in again?' }}');">
@@ -92,15 +105,22 @@
                             <form action="{{ route('settings.users.delete', $user) }}" method="POST" class="inline">
                                 @csrf
                                 @method('DELETE')
-                                <button class="text-red-600 hover:underline"
+                                <button class="font-medium text-red-600 hover:underline dark:text-red-400"
                                     onclick="return confirm('Deleting removes {{ addslashes($user->name) }} from the user list for good. Deactivating is almost always what you want instead. Delete anyway?');">
                                     Delete
                                 </button>
                             </form>
                         @endif
-                    </td>
-                </tr>
-            @endforeach
-        </tbody>
-    </table>
-</div>
+                    </div>
+                </td>
+            </tr>
+        @empty
+            <tr>
+                <td colspan="6">
+                    <x-empty icon="users" title="No users yet"
+                             message="Everyone who signs in to this till appears here." />
+                </td>
+            </tr>
+        @endforelse
+    </x-table>
+</x-card>

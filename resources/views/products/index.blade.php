@@ -16,45 +16,80 @@
         `is_service`, `parent_id` and `has_variants` sit in this scope so the add
         form's conditional fields have something declared to bind to; the edit
         form binds onto editProduct.
-    --}}
-    <div x-data="{ addModal: false, editModal: false, editProduct: {}, is_service: false, parent_id: null, has_variants: false }">
-        @if ($errors->any())
-            <div class="bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-200 px-4 py-2 rounded mb-3">
-                <ul class="list-disc ml-5">
-                    @foreach ($errors->all() as $error)
-                        <li>{{ $error }}</li>
-                    @endforeach
-                </ul>
-            </div>
-        @endif
 
-        {{-- Header --}}
-        <div class="flex justify-between items-center mb-4">
-            <button @click="addModal = true" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
-                ➕ Add {{ $productLabel }}
-            </button>
-        </div>
+        `openVariants` is keyed by product id rather than held per row: x-table
+        renders one <tbody> for the whole list, so a row and its variant panel
+        can no longer share a <tbody> scope of their own.
+    --}}
+    <div x-data="{
+        openVariants: {},
+        addModal: false,
+        editModal: false,
+        editProduct: {},
+        is_service: false,
+        parent_id: null,
+        has_variants: false,
+    }">
+        <x-page-header :title="$productsLabel"
+                       :subtitle="number_format($products->total()) . ' ' . Str::lower(Str::plural($productLabel, $products->total()))
+                            . (request('search') ? ' matching \'' . request('search') . '\'' : '')">
+            <x-slot:actions>
+                @if (Route::has('products.import.form'))
+                    <a href="{{ route('products.import.form') }}"
+                       class="inline-flex min-h-touch items-center gap-1.5 rounded-md bg-white px-4 py-2 text-sm font-medium text-gray-700 ring-1 ring-gray-200 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-200 dark:ring-gray-700 dark:hover:bg-gray-700">
+                        <x-icon name="upload" size="4" />
+                        Import
+                    </a>
+                @endif
+
+                <button type="button" @click="addModal = true"
+                        class="inline-flex min-h-touch items-center gap-1.5 rounded-md bg-primary-600 px-4 py-2 text-sm font-semibold text-white hover:bg-primary-700">
+                    <x-icon name="plus" size="4" />
+                    Add {{ $productLabel }}
+                </button>
+            </x-slot:actions>
+        </x-page-header>
 
         {{-- Search --}}
-        <form method="GET" action="{{ route('products.index') }}" class="mb-4">
-            <input type="text" name="search" value="{{ request('search') }}" placeholder="Search {{ Str::lower($productsLabel) }}..."
-                class="w-full border rounded px-3 py-2 dark:bg-gray-800 dark:border-gray-600">
-        </form>
+        <x-card class="mb-4">
+            <form method="GET" action="{{ route('products.index') }}" class="flex flex-wrap items-center gap-2">
+                <div class="relative min-w-0 flex-1">
+                    <label for="product-search" class="sr-only">Search {{ Str::lower($productsLabel) }}</label>
+                    <span class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400">
+                        <x-icon name="search" size="4" />
+                    </span>
+                    <input id="product-search" type="search" name="search" value="{{ request('search') }}"
+                           placeholder="Name, SKU or barcode"
+                           class="min-h-touch w-full rounded-md border-gray-300 pl-9 shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white">
+                </div>
 
-        {{-- Products Table --}}
-        <div class="bg-white dark:bg-gray-800 shadow rounded p-4">
-            <table class="w-full table-auto">
-                <thead class="bg-gray-200 dark:bg-gray-700">
+                <button type="submit"
+                        class="inline-flex min-h-touch items-center gap-1.5 rounded-md bg-primary-600 px-4 py-2 text-sm font-semibold text-white hover:bg-primary-700">
+                    Search
+                </button>
+
+                @if (request('search'))
+                    <a href="{{ route('products.index') }}"
+                       class="inline-flex min-h-touch items-center gap-1.5 rounded-md bg-white px-4 py-2 text-sm font-medium text-gray-700 ring-1 ring-gray-200 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-200 dark:ring-gray-700 dark:hover:bg-gray-700">
+                        Clear
+                    </a>
+                @endif
+            </form>
+        </x-card>
+
+        {{-- The list --}}
+        <x-card :padding="false">
+            <x-table>
+                <x-slot:head>
                     <tr>
-                        <th class="px-4 py-2 text-left">#</th>
-                        <th class="px-4 py-2 text-left">{{ $productLabel }}</th>
-                        <th class="px-4 py-2 text-left">SKU</th>
-                        <th class="px-4 py-2 text-left">{{ term('category', false, 'Category') }}</th>
-                        <th class="px-4 py-2 text-right">Stock</th>
-                        <th class="px-4 py-2 text-right">Price</th>
-                        <th class="px-4 py-2 text-left">Actions</th>
+                        <th>{{ $productLabel }}</th>
+                        <th>SKU</th>
+                        <th>{{ term('category', false, 'Category') }}</th>
+                        <th class="text-right">Stock</th>
+                        <th class="text-right">Price</th>
+                        <th><span class="sr-only">Actions</span></th>
                     </tr>
-                </thead>
+                </x-slot:head>
 
                 @forelse ($products as $product)
                     @php
@@ -95,158 +130,231 @@
                             && $product->expiry_date->lte(now()->addDays($expiryWarningDays));
                     @endphp
 
-                    {{--
-                        One <tbody> per product so the row and its variant panel
-                        share an Alpine scope: a <tr> cannot contain another, and
-                        several tbody elements in one table are perfectly legal.
-                    --}}
-                    <tbody x-data="{ open: false }">
-                        <tr class="border-b dark:border-gray-700">
-                            <td class="px-4 py-2">{{ $loop->iteration }}</td>
-                            <td class="px-4 py-2">
-                                <div class="flex items-center gap-3">
-                                    @if ($product->image_path)
-                                        <img src="{{ asset('storage/' . $product->image_path) }}" alt=""
-                                             class="h-10 w-10 object-cover rounded border border-gray-200 dark:border-gray-600">
-                                    @else
-                                        <span class="h-10 w-10 rounded bg-gray-100 dark:bg-gray-700 flex items-center justify-center text-xs text-gray-400">
-                                            —
-                                        </span>
-                                    @endif
-                                    <div>
-                                        {{ $product->name }}
+                    <tr>
+                        <td>
+                            <div class="flex items-center gap-3">
+                                @if ($product->image_path)
+                                    <img src="{{ asset('storage/' . $product->image_path) }}" alt=""
+                                         class="h-10 w-10 shrink-0 rounded-lg object-cover ring-1 ring-gray-200 dark:ring-gray-600">
+                                @else
+                                    <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-gray-100 text-gray-400 dark:bg-gray-700 dark:text-gray-500"
+                                          aria-hidden="true">
+                                        <x-icon name="box" size="5" />
+                                    </span>
+                                @endif
+
+                                <div class="min-w-0">
+                                    <div class="flex flex-wrap items-center gap-1.5">
+                                        <span class="font-medium text-gray-900 dark:text-gray-100">{{ $product->name }}</span>
+
                                         @unless ($product->is_active)
-                                            <span class="text-xs px-1 rounded bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300">inactive</span>
+                                            <x-badge variant="gray" size="sm">inactive</x-badge>
                                         @endunless
+
                                         @if ($product->is_service)
-                                            <span class="text-xs px-1 rounded bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">service</span>
+                                            <x-badge variant="blue" size="sm">service</x-badge>
                                         @endif
+
                                         @if ($variantCount)
-                                            <span class="text-xs px-1 rounded bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200">
-                                                {{ $variantCount }} variants
-                                            </span>
+                                            <x-badge variant="purple" size="sm">{{ $variantCount }} variants</x-badge>
                                         @elseif ($product->isVariant())
-                                            <span class="text-xs px-1 rounded bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200">
-                                                variant
-                                            </span>
+                                            <x-badge variant="purple" size="sm">variant</x-badge>
                                         @endif
-                                        @if ($product->supplier)
-                                            <div class="text-xs text-gray-500 dark:text-gray-400">{{ $product->supplier->name }}</div>
-                                        @endif
-                                        @if ($expiring)
-                                            <div class="text-xs {{ $product->expiry_date->isPast() ? 'text-red-600 dark:text-red-400' : 'text-amber-600 dark:text-amber-400' }}">
+                                    </div>
+
+                                    @if ($product->supplier)
+                                        <div class="text-xs text-gray-500 dark:text-gray-400">{{ $product->supplier->name }}</div>
+                                    @endif
+
+                                    @if ($expiring)
+                                        <div class="mt-0.5">
+                                            <x-badge :variant="$product->expiry_date->isPast() ? 'red' : 'amber'" size="sm" dot>
                                                 {{ $product->expiry_date->isPast() ? 'Expired' : 'Expires' }}
                                                 {{ $product->expiry_date->format('d M Y') }}
                                                 @if ($product->batch_no) &middot; batch {{ $product->batch_no }} @endif
-                                            </div>
-                                        @endif
-
-                                        {{-- Variants live under their style, folded away until asked for. --}}
-                                        @if ($variantsOn && !$product->isVariant())
-                                            <button type="button" @click="open = !open"
-                                                    class="mt-1 text-xs text-blue-600 dark:text-blue-400 hover:underline">
-                                                <span x-text="open ? '▾' : '▸'"></span>
-                                                {{ $variantCount ? 'Show variants' : 'Add variants' }}
-                                            </button>
-                                        @endif
-                                    </div>
-                                </div>
-                            </td>
-                            <td class="px-4 py-2">{{ $product->sku }}</td>
-                            <td class="px-4 py-2">{{ $product->category->name ?? '-' }}</td>
-                            <td class="px-4 py-2 text-right">
-                                @if ($variantCount)
-                                    {{-- A style has no stock of its own: this is the sum of its variants'. --}}
-                                    {{ $product->totalStock() }}
-                                    <div class="text-xs text-gray-500 dark:text-gray-400">across {{ $variantCount }} variants</div>
-                                @elseif ($product->tracksStock())
-                                    {{ $product->stock_quantity }}{{ feature('units') && $product->unit ? ' ' . $product->unit : '' }}
-                                    @if ($product->isLowStock())
-                                        <span class="text-red-500">(Low)</span>
+                                            </x-badge>
+                                        </div>
                                     @endif
-                                @else
-                                    <span class="text-gray-400">n/a</span>
-                                @endif
-                            </td>
-                            <td class="px-4 py-2 text-right">{{ money($product->sale_price) }}</td>
 
-                            <td class="px-4 py-2">
-                                <div class="flex gap-2">
-                                    {{-- Edit Button --}}
-                                    <button @click="editModal = true; editProduct = {{ Js::from($row) }}"
-                                        class="bg-yellow-500 text-white px-3 py-1 rounded hover:bg-yellow-600">
-                                        ✏️ Edit
-                                    </button>
-
-                                    {{-- Delete --}}
-                                    <form action="{{ route('products.destroy', $product->id) }}" method="POST"
-                                        onsubmit="return confirm('Are you sure?');">
-                                        @csrf
-                                        @method('DELETE')
-                                        <button type="submit" class="bg-red-600 text-white px-3 py-1 rounded hover:bg-red-700">
-                                            🗑️ Delete
+                                    {{-- Variants live under their style, folded away until asked for. --}}
+                                    @if ($variantsOn && !$product->isVariant())
+                                        <button type="button"
+                                                @click="openVariants[{{ $product->id }}] = ! openVariants[{{ $product->id }}]"
+                                                :aria-expanded="openVariants[{{ $product->id }}] ? 'true' : 'false'"
+                                                aria-controls="variants-{{ $product->id }}"
+                                                class="mt-1 inline-flex items-center gap-1 text-xs font-medium text-primary-600 hover:underline dark:text-primary-400">
+                                            <x-icon name="chevron-down" size="3"
+                                                    x-bind:class="openVariants[{{ $product->id }}] ? 'rotate-180 transition' : 'transition'" />
+                                            {{ $variantCount ? 'Show variants' : 'Add variants' }}
                                         </button>
-                                    </form>
+                                    @endif
                                 </div>
+                            </div>
+                        </td>
+
+                        <td class="text-gray-500 dark:text-gray-400">{{ $product->sku }}</td>
+                        <td class="text-gray-500 dark:text-gray-400">{{ $product->category->name ?? '-' }}</td>
+
+                        <td class="text-right tabular-nums">
+                            @if ($variantCount)
+                                {{-- A style has no stock of its own: this is the sum of its variants'. --}}
+                                {{ $product->totalStock() }}
+                                <span class="block text-xs text-gray-500 dark:text-gray-400">across {{ $variantCount }} variants</span>
+                            @elseif ($product->tracksStock())
+                                @if ($product->isLowStock())
+                                    <x-badge :variant="(int) $product->stock_quantity <= 0 ? 'red' : 'amber'" size="sm">
+                                        {{ $product->stock_quantity }}{{ feature('units') && $product->unit ? ' ' . $product->unit : '' }}
+                                        (Low)
+                                    </x-badge>
+                                @else
+                                    {{ $product->stock_quantity }}{{ feature('units') && $product->unit ? ' ' . $product->unit : '' }}
+                                @endif
+                            @else
+                                <span class="text-gray-400 dark:text-gray-500">n/a</span>
+                            @endif
+                        </td>
+
+                        <td class="text-right tabular-nums">{{ money($product->sale_price) }}</td>
+
+                        <td>
+                            <div class="flex items-center justify-end gap-2">
+                                <button type="button"
+                                        @click="editModal = true; editProduct = {{ Js::from($row) }}"
+                                        class="inline-flex min-h-touch items-center gap-1.5 rounded-md bg-white px-3 py-1.5 text-sm font-medium text-gray-700 ring-1 ring-gray-200 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-200 dark:ring-gray-700 dark:hover:bg-gray-700">
+                                    <x-icon name="sliders" size="4" />
+                                    Edit
+                                </button>
+
+                                <form action="{{ route('products.destroy', $product->id) }}" method="POST"
+                                      onsubmit="return confirm('Are you sure?');">
+                                    @csrf
+                                    @method('DELETE')
+                                    <button type="submit"
+                                            class="inline-flex min-h-touch items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-red-600 ring-1 ring-red-200 hover:bg-red-50 dark:text-red-400 dark:ring-red-900 dark:hover:bg-red-950"
+                                            aria-label="Delete {{ $product->name }}">
+                                        <x-icon name="x" size="4" />
+                                    </button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+
+                    @if ($variantsOn && !$product->isVariant())
+                        <tr x-show="openVariants[{{ $product->id }}]" x-cloak id="variants-{{ $product->id }}">
+                            <td colspan="6" class="bg-gray-50 dark:bg-gray-900/40">
+                                @include('products._variants', ['product' => $product])
                             </td>
                         </tr>
-
-                        @if ($variantsOn && !$product->isVariant())
-                            <tr x-show="open" style="display: none" class="border-b dark:border-gray-700">
-                                <td colspan="7" class="px-4 pb-4">
-                                    @include('products._variants', ['product' => $product])
-                                </td>
-                            </tr>
-                        @endif
-                    </tbody>
+                    @endif
                 @empty
-                    <tbody>
-                        <tr>
-                            <td colspan="7" class="text-center px-4 py-4 text-gray-500">
-                                No {{ Str::lower($productsLabel) }} found.
-                            </td>
-                        </tr>
-                    </tbody>
+                    <tr>
+                        <td colspan="6">
+                            <x-empty icon="box"
+                                     :title="'No ' . Str::lower($productsLabel) . ' found'"
+                                     :message="request('search')
+                                        ? 'Nothing matches that name, SKU or barcode.'
+                                        : 'Add your first ' . Str::lower($productLabel) . ' to start selling it at the till.'">
+                                <x-slot:action>
+                                    @if (request('search'))
+                                        <a href="{{ route('products.index') }}"
+                                           class="inline-flex min-h-touch items-center gap-1.5 rounded-md bg-white px-4 py-2 text-sm font-medium text-gray-700 ring-1 ring-gray-200 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-200 dark:ring-gray-700 dark:hover:bg-gray-700">
+                                            Clear the search
+                                        </a>
+                                    @else
+                                        <button type="button" @click="addModal = true"
+                                                class="inline-flex min-h-touch items-center gap-1.5 rounded-md bg-primary-600 px-4 py-2 text-sm font-semibold text-white hover:bg-primary-700">
+                                            <x-icon name="plus" size="4" />
+                                            Add {{ $productLabel }}
+                                        </button>
+                                    @endif
+                                </x-slot:action>
+                            </x-empty>
+                        </td>
+                    </tr>
                 @endforelse
-            </table>
-        </div>
+            </x-table>
 
-        {{-- Pagination --}}
-        <div class="mt-4">
-            {{ $products->links() }}
-        </div>
+            @if ($products->hasPages())
+                <x-slot:footer>{{ $products->links() }}</x-slot:footer>
+            @endif
+        </x-card>
 
-        {{-- Add Product Modal --}}
-        <div x-show="addModal" style="display: none"
-            class="fixed inset-0 bg-black bg-opacity-50 flex items-start justify-center z-50 p-4 overflow-y-auto">
-            <div class="bg-white dark:bg-gray-800 p-6 rounded shadow w-full max-w-3xl my-8" @click.away="addModal = false">
-                <h2 class="text-xl font-bold mb-4">Add {{ $productLabel }}</h2>
+        {{--
+            Add and Edit modals.
+
+            These keep their own Alpine state (addModal / editModal) rather than
+            becoming <x-modal>, which is driven by open-modal events: the Edit
+            button has to set editProduct in the same click that opens the panel.
+        --}}
+        <div x-show="addModal" x-cloak
+             class="fixed inset-0 z-modal flex items-start justify-center overflow-y-auto bg-gray-900/60 p-4"
+             role="dialog" aria-modal="true" aria-labelledby="add-product-title"
+             @keydown.escape.window="addModal = false">
+            <div class="my-8 w-full max-w-3xl rounded-xl bg-white shadow-xl ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700"
+                 @click.outside="addModal = false">
+                <div class="flex items-start justify-between gap-3 border-b border-gray-200 px-4 py-3 dark:border-gray-700 sm:px-5">
+                    <h2 id="add-product-title" class="text-base font-semibold text-gray-900 dark:text-gray-100">
+                        Add {{ $productLabel }}
+                    </h2>
+                    <button type="button" @click="addModal = false" aria-label="Close"
+                            class="-m-1.5 flex h-touch w-touch shrink-0 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700">
+                        <x-icon name="x" size="5" />
+                    </button>
+                </div>
+
                 {{-- enctype: the form carries a picture. --}}
                 <form method="POST" action="{{ route('products.store') }}" enctype="multipart/form-data">
                     @csrf
-                    @include('products._form')
-                    <div class="flex justify-end gap-2 mt-4">
-                        <button type="button" @click="addModal = false" class="px-4 py-2 border rounded dark:border-gray-600">Cancel</button>
+                    <div class="max-h-[70vh] overflow-y-auto p-4 sm:p-5">
+                        @include('products._form')
+                    </div>
+
+                    <div class="flex flex-wrap justify-end gap-2 border-t border-gray-200 px-4 py-3 dark:border-gray-700 sm:px-5">
+                        <button type="button" @click="addModal = false"
+                                class="inline-flex min-h-touch items-center gap-1.5 rounded-md bg-white px-4 py-2 text-sm font-medium text-gray-700 ring-1 ring-gray-200 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-200 dark:ring-gray-700 dark:hover:bg-gray-700">
+                            Cancel
+                        </button>
                         <button type="submit"
-                            class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Save</button>
+                                class="inline-flex min-h-touch items-center gap-1.5 rounded-md bg-primary-600 px-4 py-2 text-sm font-semibold text-white hover:bg-primary-700">
+                            Save
+                        </button>
                     </div>
                 </form>
             </div>
         </div>
 
-        {{-- Edit Product Modal --}}
-        <div x-show="editModal" style="display: none"
-            class="fixed inset-0 bg-black bg-opacity-50 flex items-start justify-center z-50 p-4 overflow-y-auto">
-            <div class="bg-white dark:bg-gray-800 p-6 rounded shadow w-full max-w-3xl my-8" @click.away="editModal = false">
-                <h2 class="text-xl font-bold mb-4">Edit {{ $productLabel }}</h2>
+        <div x-show="editModal" x-cloak
+             class="fixed inset-0 z-modal flex items-start justify-center overflow-y-auto bg-gray-900/60 p-4"
+             role="dialog" aria-modal="true" aria-labelledby="edit-product-title"
+             @keydown.escape.window="editModal = false">
+            <div class="my-8 w-full max-w-3xl rounded-xl bg-white shadow-xl ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700"
+                 @click.outside="editModal = false">
+                <div class="flex items-start justify-between gap-3 border-b border-gray-200 px-4 py-3 dark:border-gray-700 sm:px-5">
+                    <h2 id="edit-product-title" class="text-base font-semibold text-gray-900 dark:text-gray-100">
+                        Edit {{ $productLabel }}
+                    </h2>
+                    <button type="button" @click="editModal = false" aria-label="Close"
+                            class="-m-1.5 flex h-touch w-touch shrink-0 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700">
+                        <x-icon name="x" size="5" />
+                    </button>
+                </div>
+
                 <form method="POST" :action="'/products/' + editProduct.id" enctype="multipart/form-data">
                     @csrf
                     @method('PUT')
-                    @include('products._form', ['edit' => true])
-                    <div class="flex justify-end gap-2 mt-4">
-                        <button type="button" @click="editModal = false" class="px-4 py-2 border rounded dark:border-gray-600">Cancel</button>
+                    <div class="max-h-[70vh] overflow-y-auto p-4 sm:p-5">
+                        @include('products._form', ['edit' => true])
+                    </div>
+
+                    <div class="flex flex-wrap justify-end gap-2 border-t border-gray-200 px-4 py-3 dark:border-gray-700 sm:px-5">
+                        <button type="button" @click="editModal = false"
+                                class="inline-flex min-h-touch items-center gap-1.5 rounded-md bg-white px-4 py-2 text-sm font-medium text-gray-700 ring-1 ring-gray-200 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-200 dark:ring-gray-700 dark:hover:bg-gray-700">
+                            Cancel
+                        </button>
                         <button type="submit"
-                            class="px-4 py-2 bg-yellow-600 text-white rounded hover:bg-yellow-700">Update</button>
+                                class="inline-flex min-h-touch items-center gap-1.5 rounded-md bg-primary-600 px-4 py-2 text-sm font-semibold text-white hover:bg-primary-700">
+                            Update
+                        </button>
                     </div>
                 </form>
             </div>

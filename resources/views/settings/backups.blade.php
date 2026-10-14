@@ -3,24 +3,21 @@
 @section('title', 'Backup history')
 
 @section('content')
-<div class="bg-white dark:bg-gray-800 rounded shadow p-4 text-sm">
+    <x-page-header title="Backup history" subtitle="Every run, by hand or by the scheduler."
+                   :back="route('settings.index')" back-label="Back to settings" />
 
-    <div class="flex items-center justify-between mb-4">
-        <div>
-            <h2 class="text-2xl font-semibold text-gray-800 dark:text-gray-100">Backup history</h2>
-            <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                Every run, by hand or by the scheduler. Writing to <code>{{ $destination }}</code>.
-            </p>
-        </div>
-        <a href="{{ route('settings.index') }}" class="text-blue-600 dark:text-blue-400 hover:underline">
-            &larr; Back to settings
-        </a>
-    </div>
+    <x-card title="All runs" :padding="false">
+        <x-slot:actions>
+            <span class="text-sm text-gray-500 dark:text-gray-400">
+                Writing to
+                <code class="rounded bg-gray-100 px-1 py-0.5 dark:bg-gray-700">{{ $destination }}</code>
+            </span>
+        </x-slot:actions>
 
-    @include('settings._backup_history', ['backups' => $backups])
+        @include('settings._backup_history', ['backups' => $backups])
 
-    <div class="mt-4">
-        {{ $backups->links() }}
-    </div>
-</div>
+        <x-slot:footer>
+            {{ $backups->links() }}
+        </x-slot:footer>
+    </x-card>
 @endsection

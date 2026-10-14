@@ -5,100 +5,155 @@
 @section('content')
     @php
         $label = term('purchase', false, 'Purchase');
-        $statusTone = [
-            \App\Models\Purchase::STATUS_ORDERED => 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200',
-            \App\Models\Purchase::STATUS_RECEIVED => 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
-            \App\Models\Purchase::STATUS_CANCELLED => 'bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300',
+        $supplierLabel = term('supplier', false, 'Supplier');
+
+        $statusBadge = [
+            \App\Models\Purchase::STATUS_ORDERED => 'amber',
+            \App\Models\Purchase::STATUS_RECEIVED => 'green',
+            \App\Models\Purchase::STATUS_CANCELLED => 'gray',
         ];
+
+        $filterInput = 'min-h-touch w-full rounded-md border-gray-300 bg-white text-sm shadow-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white';
+        $filterLabel = 'mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400';
     @endphp
 
-    <div class="bg-white dark:bg-gray-800 shadow rounded p-6 space-y-6 text-sm text-gray-800 dark:text-gray-100">
-
-        {{-- Header --}}
-        <div class="flex flex-wrap justify-between items-center gap-3 mb-4">
-            <a href="{{ route('purchases.create') }}"
-                class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded text-sm">
-                + New {{ $label }}
+    <x-page-header :title="term('purchase', true, 'Purchase Orders')"
+                   subtitle="What has been ordered from whom, and what is still owed on it">
+        <x-slot:actions>
+            <a href="{{ route('suppliers.index') }}"
+               class="inline-flex min-h-touch items-center gap-1.5 rounded-md bg-white px-4 py-2 text-sm font-medium text-gray-700 ring-1 ring-gray-200 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-200 dark:ring-gray-700 dark:hover:bg-gray-700">
+                <x-icon name="truck" size="4" />
+                {{ term('supplier', true, 'Suppliers') }}
             </a>
-            <div class="flex gap-2">
-                <a href="{{ route('suppliers.index') }}"
-                   class="px-4 py-2 rounded border border-gray-300 dark:border-gray-600 text-sm">
-                    {{ term('supplier', true, 'Suppliers') }}
-                </a>
-                <a href="{{ route('purchases.returns.index') }}"
-                   class="px-4 py-2 rounded border border-gray-300 dark:border-gray-600 text-sm">Returns</a>
+
+            <a href="{{ route('purchases.returns.index') }}"
+               class="inline-flex min-h-touch items-center gap-1.5 rounded-md bg-white px-4 py-2 text-sm font-medium text-gray-700 ring-1 ring-gray-200 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-200 dark:ring-gray-700 dark:hover:bg-gray-700">
+                <x-icon name="undo" size="4" />
+                Returns
+            </a>
+
+            <a href="{{ route('purchases.create') }}"
+               class="inline-flex min-h-touch items-center gap-1.5 rounded-md bg-primary-600 px-4 py-2 text-sm font-semibold text-white hover:bg-primary-700">
+                <x-icon name="plus" size="4" />
+                New {{ $label }}
+            </a>
+        </x-slot:actions>
+    </x-page-header>
+
+    {{-- Filters --}}
+    <x-card class="mb-4">
+        <form method="GET" class="grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2 lg:grid-cols-5">
+            <div>
+                <label for="purchase-search" class="{{ $filterLabel }}">Search</label>
+                <input id="purchase-search" type="search" name="search" value="{{ request('search') }}"
+                       placeholder="Search Invoice..." class="{{ $filterInput }}">
             </div>
-        </div>
 
-        {{-- Filters --}}
-        <form method="GET" class="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
-            <x-input type="text" name="search" value="{{ request('search') }}" placeholder="Search Invoice..."
-                class="border rounded px-2 py-1 w-full" />
+            {{-- searchable: a wholesaler's supplier list is far too long to scroll. --}}
+            <div class="[&>div]:mb-0">
+                <x-select name="supplier_id" :label="'All ' . term('supplier', true, 'Suppliers')" searchable
+                          :options="$suppliers" option-label="name" option-value="id"
+                          :placeholder="'-- Select ' . $supplierLabel . ' --'"
+                          :selected="request('supplier_id')" />
+            </div>
 
-            <x-select name="supplier_id" label="All Suppliers" :options="$suppliers"
-                option-label="name" option-value="id" placeholder="-- Select Supplier --"
-                :selected="request('supplier_id')" class="w-full" />
+            <div>
+                <label for="purchase-status" class="{{ $filterLabel }}">Status</label>
+                <select id="purchase-status" name="status" class="{{ $filterInput }}">
+                    <option value="">-- Any status --</option>
+                    @foreach (['ordered' => 'Ordered', 'received' => 'Received', 'cancelled' => 'Cancelled'] as $value => $text)
+                        <option value="{{ $value }}" @selected(request('status') === $value)>{{ $text }}</option>
+                    @endforeach
+                </select>
+            </div>
 
-            <x-select name="status" label="Status" :options="['ordered' => 'Ordered', 'received' => 'Received', 'cancelled' => 'Cancelled']"
-                placeholder="-- Any status --" :selected="request('status')" class="w-full" />
+            <div>
+                <label for="purchase-from" class="{{ $filterLabel }}">From Date</label>
+                <input id="purchase-from" type="date" name="from_date" value="{{ request('from_date') }}"
+                       class="{{ $filterInput }}">
+            </div>
 
-            <x-input type="date" name="from_date" value="{{ request('from_date') }}" class="border rounded px-2 py-1 w-full"
-                placeholder="From Date" />
-            <x-input type="date" name="to_date" value="{{ request('to_date') }}" class="border rounded px-2 py-1 w-full"
-                placeholder="To Date" />
+            <div>
+                <label for="purchase-to" class="{{ $filterLabel }}">To Date</label>
+                <input id="purchase-to" type="date" name="to_date" value="{{ request('to_date') }}"
+                       class="{{ $filterInput }}">
+            </div>
 
-            <div class="md:col-span-5 text-right">
-                <button type="submit" class="bg-blue-600 text-white px-4 py-1 rounded">Filter</button>
-                <a href="{{ route('purchases.index') }}" class="text-sm text-gray-500 ml-2">Reset</a>
+            <div class="flex items-end gap-2 sm:col-span-2 lg:col-span-5 lg:justify-end">
+                <button type="submit"
+                        class="inline-flex min-h-touch items-center gap-1.5 rounded-md bg-primary-600 px-4 py-2 text-sm font-semibold text-white hover:bg-primary-700">
+                    Filter
+                </button>
+                <a href="{{ route('purchases.index') }}"
+                   class="inline-flex min-h-touch items-center gap-1.5 rounded-md bg-white px-4 py-2 text-sm font-medium text-gray-700 ring-1 ring-gray-200 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-200 dark:ring-gray-700 dark:hover:bg-gray-700">
+                    Reset
+                </a>
             </div>
         </form>
+    </x-card>
 
-        {{-- Table --}}
-        <div class="overflow-x-auto">
-            <table class="w-full table-auto border text-sm">
-                <thead class="bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300">
-                    <tr>
-                        <th class="p-2 text-left">Invoice</th>
-                        <th class="p-2 text-left">{{ term('supplier', false, 'Supplier') }}</th>
-                        <th class="p-2 text-left">Date</th>
-                        <th class="p-2 text-left">Status</th>
-                        <th class="p-2 text-right">Total</th>
-                        <th class="p-2 text-right">Outstanding</th>
-                        <th class="p-2 text-left">Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @forelse($purchases as $purchase)
-                        <tr class="border-t dark:border-gray-700">
-                            <td class="p-2">{{ $purchase->invoice_number }}</td>
-                            <td class="p-2">{{ $purchase->supplier->name ?? '-' }}</td>
-                            <td class="p-2">{{ \Carbon\Carbon::parse($purchase->purchase_date)->format('d M Y') }}</td>
-                            <td class="p-2">
-                                <span class="text-xs px-2 py-1 rounded {{ $statusTone[$purchase->status] ?? '' }}">
-                                    {{ ucfirst($purchase->status) }}
-                                </span>
-                            </td>
-                            <td class="p-2 text-right">{{ money($purchase->total_amount) }}</td>
-                            <td class="p-2 text-right">{{ money($purchase->balance_due) }}</td>
-                            <td class="p-2 whitespace-nowrap">
-                                <a href="{{ route('purchases.show', $purchase->id) }}"
-                                    class="text-blue-600 dark:text-blue-400 hover:underline">View</a>
-                                <a href="{{ route('purchases.edit', $purchase->id) }}"
-                                    class="ml-2 text-yellow-600 dark:text-yellow-400 hover:underline">Edit</a>
-                            </td>
-                        </tr>
-                    @empty
-                        <tr>
-                            <td colspan="7" class="text-center py-4 text-gray-500">No purchases found.</td>
-                        </tr>
-                    @endforelse
-                </tbody>
-            </table>
-        </div>
+    <x-card :padding="false">
+        <x-table>
+            <x-slot:head>
+                <tr>
+                    <th>Invoice</th>
+                    <th>{{ $supplierLabel }}</th>
+                    <th>Date</th>
+                    <th>Status</th>
+                    <th class="text-right">Total</th>
+                    <th class="text-right">Outstanding</th>
+                    <th><span class="sr-only">Actions</span></th>
+                </tr>
+            </x-slot:head>
 
-        {{-- Pagination --}}
-        <div class="mt-4">
-            {{ $purchases->withQueryString()->links() }}
-        </div>
-    </div>
+            @forelse($purchases as $purchase)
+                <tr>
+                    <td class="whitespace-nowrap font-mono">{{ $purchase->invoice_number }}</td>
+                    <td>{{ $purchase->supplier->name ?? '-' }}</td>
+                    <td class="whitespace-nowrap text-gray-500 dark:text-gray-400">
+                        {{ \Carbon\Carbon::parse($purchase->purchase_date)->format('d M Y') }}
+                    </td>
+                    <td>
+                        <x-badge :variant="$statusBadge[$purchase->status] ?? 'gray'" size="sm">
+                            {{ ucfirst($purchase->status) }}
+                        </x-badge>
+                    </td>
+                    <td class="text-right tabular-nums">{{ money($purchase->total_amount) }}</td>
+                    <td class="text-right tabular-nums">
+                        @if ($purchase->balance_due > 0)
+                            <span class="font-medium text-amber-700 dark:text-amber-400">{{ money($purchase->balance_due) }}</span>
+                        @else
+                            {{ money($purchase->balance_due) }}
+                        @endif
+                    </td>
+                    <td class="whitespace-nowrap text-right">
+                        <a href="{{ route('purchases.show', $purchase->id) }}"
+                           class="font-medium text-primary-600 hover:underline dark:text-primary-400">View</a>
+                        <a href="{{ route('purchases.edit', $purchase->id) }}"
+                           class="ml-3 font-medium text-primary-600 hover:underline dark:text-primary-400">Edit</a>
+                    </td>
+                </tr>
+            @empty
+                <tr>
+                    <td colspan="7">
+                        <x-empty icon="truck"
+                                 :title="'No ' . Str::lower(term('purchase', true, 'purchases')) . ' found'"
+                                 message="Raise one when you order goods, or type in a delivery that has arrived.">
+                            <x-slot:action>
+                                <a href="{{ route('purchases.create') }}"
+                                   class="inline-flex min-h-touch items-center gap-1.5 rounded-md bg-primary-600 px-4 py-2 text-sm font-semibold text-white hover:bg-primary-700">
+                                    <x-icon name="plus" size="4" />
+                                    New {{ $label }}
+                                </a>
+                            </x-slot:action>
+                        </x-empty>
+                    </td>
+                </tr>
+            @endforelse
+        </x-table>
+
+        @if ($purchases->hasPages())
+            <x-slot:footer>{{ $purchases->withQueryString()->links() }}</x-slot:footer>
+        @endif
+    </x-card>
 @endsection
