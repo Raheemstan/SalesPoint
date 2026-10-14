@@ -9,10 +9,17 @@
      *
      * A shop that does not run shifts sees nothing at all, which is why the
      * "no shift" case is tied to require_open_shift rather than shown to everyone.
+     *
+     * It sits in the header bar, so it stays a single compact chip: no panel, no
+     * page-level layout, and a fingertip-high tap target like its neighbours.
      */
     $shifts = app(\App\Services\ShiftService::class);
     $openShift = auth()->check() ? $shifts->currentFor(auth()->user()) : null;
     $shiftRequired = $shifts->requiredToSell();
+
+    // The shape is shared; the colours are written out per state, because an
+    // interpolated class name compiles to nothing in the Tailwind build.
+    $chip = 'inline-flex min-h-touch items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium ring-1 ring-inset transition';
 @endphp
 
 @if ($openShift)
@@ -23,22 +30,17 @@
     @endphp
 
     <a href="{{ route('shifts.show', $openShift) }}"
-       class="inline-flex min-h-touch items-center gap-2 rounded-md border border-green-300 bg-green-50 px-3 py-1.5 text-sm text-green-800 transition hover:bg-green-100 dark:border-green-700 dark:bg-green-900/40 dark:text-green-200 dark:hover:bg-green-900/70"
+       class="{{ $chip }} bg-green-100 text-green-800 ring-green-200 hover:bg-green-200 dark:bg-green-900/50 dark:text-green-200 dark:ring-green-800 dark:hover:bg-green-900/70"
        title="{{ $openShift->user->name }} opened this drawer {{ $openShift->opened_at->diffForHumans() }}">
-        <span class="relative flex h-2 w-2 shrink-0">
-            <span class="absolute inline-flex h-full w-full rounded-full bg-green-500 opacity-75"></span>
-        </span>
-        <span class="hidden sm:inline">{{ money($expectedCash) }} expected</span>
-        <span class="sm:hidden">Shift open</span>
+        <span class="h-1.5 w-1.5 shrink-0 rounded-full bg-green-500" aria-hidden="true"></span>
+        <span class="hidden whitespace-nowrap tabular-nums sm:inline">{{ money($expectedCash) }} expected</span>
+        <span class="whitespace-nowrap sm:hidden">Shift open</span>
     </a>
 @elseif ($shiftRequired)
     <a href="{{ route('shifts.index') }}"
-       class="inline-flex min-h-touch items-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-1.5 text-sm text-amber-900 transition hover:bg-amber-100 dark:border-amber-700 dark:bg-amber-900/40 dark:text-amber-100 dark:hover:bg-amber-900/70">
-        <svg class="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                  d="M12 9v3.75m0 3.75h.008M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-        </svg>
-        <span class="hidden sm:inline">No shift open</span>
-        <span class="sm:hidden">No shift</span>
+       class="{{ $chip }} bg-amber-100 text-amber-800 ring-amber-200 hover:bg-amber-200 dark:bg-amber-900/50 dark:text-amber-200 dark:ring-amber-800 dark:hover:bg-amber-900/70">
+        <x-icon name="alert-triangle" size="4" />
+        <span class="hidden whitespace-nowrap sm:inline">No shift open</span>
+        <span class="whitespace-nowrap sm:hidden">No shift</span>
     </a>
 @endif

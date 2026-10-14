@@ -804,13 +804,16 @@ test('the migration rolls back and reapplies cleanly', function () {
         ->and(Schema::hasTable('table_orders'))->toBeTrue()
         ->and(Schema::hasTable('table_order_items'))->toBeTrue();
 
-    // And it is really usable again, not merely present. The rollback took the
-    // rows with it, so the fixture table has to be made again.
-    $this->table = Table::factory()->create(['name' => 'T1']);
-
-    $order = orderWith([[menuItem(1000), 2]]);
-    expect($order->items()->count())->toBe(1)
-        ->and(app(TableOrderService::class)->totals($order)['grand_total'])->toBe(2000.0);
+    /*
+     * Deliberately not asserting the tables are *usable* again here. A bare
+     * up() rebuilds this migration's own schema, not the schema as it stands
+     * today: later migrations alter these same tables (multi-branch adds
+     * `tables.branch_id`), and a single migration cannot know about the ones
+     * that come after it. Re-running the whole chain is what `migrate` is for.
+     *
+     * Usability is covered by every other test in this file, which runs against
+     * the fully migrated schema.
+     */
 });
 
 test('a line goes when its order is deleted outright', function () {
