@@ -95,7 +95,27 @@
 
     {{-- Header --}}
     <div class="center">
-        <img src="/logo.png" alt="" class="logo">
+        @php
+            /*
+             * The shop's own logo, not the SalesPoint placeholder. This used to
+             * be a hardcoded /logo.png, so a shop could upload its logo in
+             * Settings, see it on screen, and still have every receipt print
+             * somebody else's mark.
+             *
+             * Uploads live on the `public` disk (storage/app/public), reachable
+             * only through the public/storage symlink - so if `storage:link` was
+             * never run this is a broken image, which is why the README now
+             * calls that step out.
+             */
+            $logo = setting('store_logo')
+                ? asset('storage/' . setting('store_logo'))
+                : asset('logo.png');
+        @endphp
+
+        @if (setting('receipt_show_logo', '1') === '1')
+            <img src="{{ $logo }}" alt="{{ setting('store_name', 'SalesPoint POS') }}" class="logo">
+        @endif
+
         <div class="bold big">{{ setting('store_name', 'SalesPoint POS') }}</div>
         <div class="muted">{{ setting('store_motto', 'Simple POS. Smart Business.') }}</div>
         <div class="muted">{{ setting('store_address', '123 Business Street, Nigeria') }}</div>
