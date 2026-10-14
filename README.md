@@ -36,11 +36,22 @@ php artisan key:generate
 touch database/database.sqlite    # SQLite only; on Windows: type nul > database\database.sqlite
 php artisan migrate --seed
 
+php artisan storage:link      # REQUIRED - see below
 npm run build
 php artisan serve
 ```
 
 Then open <http://localhost:8000>.
+
+### `storage:link` is not optional
+
+Uploaded files — the shop logo and product images — are written to `storage/app/public`, which is outside the
+web root. `php artisan storage:link` creates the `public/storage` symlink that makes them reachable.
+
+**Without it, every uploaded image is a broken image or a 403**, with nothing in the logs to explain why, because
+the request never reaches PHP at all. Re-run it after any deploy that recreates `public/`, and note that some
+shared hosts disallow symlinks — there you must point the `public` disk at a directory inside the web root
+instead.
 
 ### The first admin
 
@@ -243,6 +254,8 @@ See `CHANGES.md` for the full record of what changed in each batch and why.
 | Symptom | Cause |
 |---|---|
 | Page loads with no styling | `npm run build` was not run, or `public/build/` was not deployed |
+| Uploaded logo or product image shows broken, or 403 in its own tab | `php artisan storage:link` was never run, so `public/storage` does not exist |
+| "table X has no column named Y" after a deploy | `php artisan migrate` was not run — the code is ahead of the schema |
 | A settings change has no effect | Config is cached — re-run `php artisan config:cache` |
 | "Failed to generate backup" | With MySQL, `mysqldump` is not on the server's `PATH`; with SQLite, `database/` is not writable |
 | Thermal printer does nothing | `print_method` is `dom`, the host is not Windows, or the printer share name is wrong — check `storage/logs/laravel.log` |
