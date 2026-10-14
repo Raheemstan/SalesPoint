@@ -1,288 +1,229 @@
 @extends('layouts.app')
-@section('title', 'Profit & Loss Report')
+
+@section('title', 'Profit & Loss')
+
+@php
+    /*
+    | The arithmetic on this page is the controller's and is deliberately left
+    | alone: revenue excludes tax and is net of refunds, cost of goods sold comes
+    | from the cost snapshotted at the moment of sale, and stock bought is cash
+    | out rather than a cost until the goods are sold. Only the presentation has
+    | changed.
+    |
+    | Two charts rather than one with five series. Net profit is the number the
+    | page exists for, so it gets its own plot with a zero line; revenue, cost
+    | and expenses are the three things that produce it and share the second.
+    | Never both on one pair of axes - two y-scales on one plot invent a
+    | relationship that is not in the data.
+    */
+    $amount = fn($value) => ($value < 0 ? '-' : '') . money(abs($value));
+
+    $days = count($labels);
+    $grossByDay = array_map(fn($i) => round($salesData[$i] - $cogsData[$i], 2), array_keys($labels));
+
+    // The running transaction list, newest first, as one ordered stream.
+    $ledger = collect()
+        ->concat($salesList->map(fn($sale) => [
+            'type' => term('sale'), 'variant' => 'green', 'reference' => $sale->invoice_number,
+            'date' => $sale->created_at->toDateString(), 'amount' => (float) $sale->grand_total,
+            'note' => $sale->note ?? null,
+        ]))
+        ->concat($refundList->map(fn($refund) => [
+            'type' => $refund->is_void ? 'Void' : 'Refund', 'variant' => $refund->is_void ? 'red' : 'orange',
+            'reference' => $refund->sale->invoice_number ?? ('#' . $refund->sale_id),
+            'date' => $refund->created_at->toDateString(), 'amount' => -(float) $refund->total_amount,
+            'note' => $refund->reason,
+        ]))
+        ->concat($purchaseList->map(fn($purchase) => [
+            'type' => term('purchase'), 'variant' => 'amber', 'reference' => $purchase->invoice_number,
+            'date' => \Carbon\Carbon::parse($purchase->purchase_date)->toDateString(),
+            'amount' => (float) $purchase->total_amount, 'note' => $purchase->note ?? null,
+        ]))
+        ->concat($expenseList->map(fn($expense) => [
+            'type' => 'Expense', 'variant' => 'blue', 'reference' => '#' . $expense->id,
+            'date' => \Carbon\Carbon::parse($expense->expense_date)->toDateString(),
+            'amount' => (float) $expense->amount, 'note' => $expense->description ?: $expense->name,
+        ]))
+        ->sortByDesc('date')
+        ->values();
+@endphp
 
 @section('content')
-    <div class="bg-white dark:bg-gray-800 p-6 rounded shadow-sm text-sm">
+    <x-page-header title="Profit &amp; loss"
+                   :subtitle="\Carbon\Carbon::parse($from)->format('j M Y') . ' to ' . \Carbon\Carbon::parse($to)->format('j M Y')" />
 
-        <form method="GET" class="flex flex-wrap gap-4 mb-6">
-            <div>
-                <x-input label="From" type="date" name="from" value="{{ $from }}" class="border rounded px-2 py-1 w-full"
-                    required />
-            </div>
-            <div>
-                <x-input label="To" type="date" name="to" value="{{ $to }}" class="border rounded px-2 py-1 w-full"
-                    required />
-            </div>
-            <div class="items-end px-2 py-1">
-                <br>
-                <button type="submit" class="black bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded">
-                    Filter
-                </button>
-            </div>
-        </form>
+    @include('reports.partials.filter-bar', [
+        'startDate' => $from,
+        'endDate' => $to,
+        'startKey' => 'from',
+        'endKey' => 'to',
+        'note' => 'Revenue excludes sales tax, which belongs to the tax authority, and is net of refunds. Cost of goods sold is what the goods cost when they were sold, so re-pricing something today cannot rewrite last month.',
+    ])
 
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div class="bg-green-100 dark:bg-green-800 p-4 rounded">
-                <p class="font-medium">Total Sales</p>
-                <p class="text-lg font-bold">₦{{ number_format($sales, 2) }}</p>
-            </div>
-            <div class="bg-yellow-100 dark:bg-yellow-800 p-4 rounded">
-                <p class="font-medium">Total Purchases</p>
-                <p class="text-lg font-bold">₦{{ number_format($purchases, 2) }}</p>
-            </div>
-            <div class="bg-red-100 dark:bg-red-800 p-4 rounded">
-                <p class="font-medium">Total Expenses</p>
-                <p class="text-lg font-bold">₦{{ number_format($expenses, 2) }}</p>
-            </div>
-        </div>
+    <div class="mt-4 grid grid-cols-2 gap-4 lg:grid-cols-3">
+        <x-stat label="Revenue" :value="$amount($sales)" icon="coins" hint="excluding tax, after refunds" />
+        <x-stat label="Cost of goods sold" :value="$amount($cogs)" icon="truck" hint="at the cost when sold" />
+        <x-stat label="Expenses" :value="$amount($expenses)" icon="receipt" />
+        <x-stat label="Gross profit" :value="$amount($grossProfit)" icon="chart-line"
+                :hint="$sales > 0 ? $margin . '% margin' : 'no revenue in this period'" />
+        <x-stat label="Net profit" :value="$amount($netProfit)" icon="scale"
+                :delta="$netProfit < 0 ? 'a loss' : null" :trend="$netProfit < 0 ? 'down' : null"
+                hint="gross profit less expenses" />
+        <x-stat label="Average a day" :value="$amount($days > 0 ? $netProfit / $days : 0)" icon="calendar"
+                :hint="$days . ' ' . Str::plural('day', $days) . ' in range'" />
+    </div>
 
-        <div class="mt-6 grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div class="bg-blue-100 dark:bg-blue-800 p-4 rounded">
-                <p class="font-medium">Gross Profit</p>
-                <p class="text-lg font-bold">₦{{ number_format($grossProfit, 2) }}</p>
-            </div>
-            <div class="bg-purple-100 dark:bg-purple-800 p-4 rounded">
-                <p class="font-medium">Net Profit</p>
-                <p class="text-lg font-bold">₦{{ number_format($netProfit, 2) }}</p>
-            </div>
-        </div>
+    {{-- For information: none of these are part of profit --}}
+    <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <x-card title="Stock purchased" subtitle="Cash out, not a cost until sold">
+            <p class="text-xl font-semibold tabular-nums">{{ $amount($purchases) }}</p>
+        </x-card>
+        <x-card title="Tax collected" subtitle="Held for the tax authority">
+            <p class="text-xl font-semibold tabular-nums">{{ $amount($taxCollected) }}</p>
+        </x-card>
+        <x-card title="Refunds paid out" subtitle="Already deducted from revenue">
+            <p class="text-xl font-semibold tabular-nums">{{ $amount($refundsTotal) }}</p>
+        </x-card>
+    </div>
 
-        {{-- Detailed Transactions Table --}}
-        <div class="mt-10">
-            <h3 class="text-lg font-bold mb-2">Detailed Transactions</h3>
+    <x-card title="Net profit per day" subtitle="What was left after cost of goods and expenses" class="mt-4">
+        @if ($sales == 0 && $cogs == 0 && $expenses == 0)
+            <x-empty icon="chart-line" title="Nothing happened in this period"
+                     message="Choose a wider date range. Sales, costs and expenses all appear here once there are any." />
+        @else
+            <div class="h-72">
+                <canvas id="pl-net" role="img" aria-label="Net profit per day over the selected period"></canvas>
+            </div>
+            <p class="mt-3 text-sm text-gray-600 dark:text-gray-300">
+                <span class="font-semibold">{{ $amount($netProfit) }}</span> over {{ $days }}
+                {{ Str::plural('day', $days) }}.
+                @php $losses = count(array_filter($netProfitData, fn($v) => $v < 0)); @endphp
+                @if ($losses > 0)
+                    {{ $losses }} {{ Str::plural('day', $losses) }} made a loss.
+                @endif
+            </p>
+        @endif
+    </x-card>
 
-            <div class="overflow-x-auto">
-                <table class="w-full text-left border-collapse">
-                    <thead>
-                        <tr class="bg-gray-100 dark:bg-gray-700">
-                            <th class="p-2 border">Type</th>
-                            <th class="p-2 border">Reference</th>
-                            <th class="p-2 border">Date</th>
-                            <th class="p-2 border">Amount (₦)</th>
-                            <th class="p-2 border">Note</th>
+    @if ($sales != 0 || $cogs != 0 || $expenses != 0)
+        <x-card title="What produced it" subtitle="Revenue, cost of goods sold and expenses, per day" class="mt-4">
+            <div class="h-72">
+                <canvas id="pl-parts" role="img"
+                        aria-label="Revenue, cost of goods sold and expenses per day over the selected period"></canvas>
+            </div>
+        </x-card>
+
+        {{-- The charts' figures, exactly: the page is still usable with no canvas. --}}
+        <x-card title="Day by day" :padding="false" class="mt-4">
+            <div class="max-h-96 overflow-y-auto">
+                <x-table :dense="true">
+                    <x-slot:head>
+                        <tr>
+                            <th>Date</th>
+                            <th class="text-right">Revenue</th>
+                            <th class="text-right">Cost of goods</th>
+                            <th class="text-right">Gross profit</th>
+                            <th class="text-right">Expenses</th>
+                            <th class="text-right">Net profit</th>
                         </tr>
-                    </thead>
-                    <tbody class="text-sm">
-                        {{-- Sales --}}
-                        @foreach ($salesList as $sale)
-                            <tr class="bg-green-50 dark:bg-green-900">
-                                <td class="p-2 border">Sale</td>
-                                <td class="p-2 border">#{{ $sale->invoice_number }}</td>
-                                <td class="p-2 border">{{ $sale->created_at->format('Y-m-d') }}</td>
-                                <td class="p-2 border">{{ number_format($sale->total_amount, 2) }}</td>
-                                <td class="p-2 border">{{ $sale->note ?? '-' }}</td>
-                            </tr>
-                        @endforeach
+                    </x-slot:head>
 
-                        {{-- Purchases --}}
-                        @foreach ($purchaseList as $purchase)
-                            <tr class="bg-yellow-50 dark:bg-yellow-900">
-                                <td class="p-2 border">Purchase</td>
-                                <td class="p-2 border">#{{ $purchase->invoice_number }}</td>
-                                <td class="p-2 border">{{ $purchase->purchase_date }}</td>
-                                <td class="p-2 border">{{ number_format($purchase->total_amount, 2) }}</td>
-                                <td class="p-2 border">{{ $purchase->note ?? '-' }}</td>
-                            </tr>
-                        @endforeach
+                    @foreach ($labels as $i => $date)
+                        <tr>
+                            <td class="whitespace-nowrap">{{ \Carbon\Carbon::parse($date)->format('D j M Y') }}</td>
+                            <td class="text-right tabular-nums">{{ $amount($salesData[$i]) }}</td>
+                            <td class="text-right tabular-nums">{{ $amount($cogsData[$i]) }}</td>
+                            <td class="text-right tabular-nums">{{ $amount($grossByDay[$i]) }}</td>
+                            <td class="text-right tabular-nums">{{ $amount($expensesData[$i]) }}</td>
+                            <td class="text-right tabular-nums {{ $netProfitData[$i] < 0 ? 'text-red-700 dark:text-red-400' : '' }}">
+                                {{ $amount($netProfitData[$i]) }}
+                            </td>
+                        </tr>
+                    @endforeach
 
-                        {{-- Expenses --}}
-                        @foreach ($expenseList as $expense)
-                            <tr class="bg-red-50 dark:bg-red-900">
-                                <td class="p-2 border">Expense</td>
-                                <td class="p-2 border">#{{ $expense->id }}</td>
-                                <td class="p-2 border">{{ $expense->expense_date }}</td>
-                                <td class="p-2 border">{{ number_format($expense->amount, 2) }}</td>
-                                <td class="p-2 border">{{ $expense->description }}</td>
-                            </tr>
-                        @endforeach
-                    </tbody>
-                </table>
+                    <x-slot:foot>
+                        <tr>
+                            <td>Total</td>
+                            <td class="text-right tabular-nums">{{ $amount($sales) }}</td>
+                            <td class="text-right tabular-nums">{{ $amount($cogs) }}</td>
+                            <td class="text-right tabular-nums">{{ $amount($grossProfit) }}</td>
+                            <td class="text-right tabular-nums">{{ $amount($expenses) }}</td>
+                            <td class="text-right tabular-nums">{{ $amount($netProfit) }}</td>
+                        </tr>
+                    </x-slot:foot>
+                </x-table>
             </div>
-        </div>
+        </x-card>
+    @endif
 
-        <div class="mt-8 flex gap-4">
-            <button id="show-bar-chart" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded">
-                📊 Show Bar Chart
-            </button>
-            <button id="show-line-chart" class="bg-teal-600 hover:bg-teal-700 text-white px-4 py-2 rounded">
-                📈 Show Line Chart
-            </button>
-        </div>
+    <x-card title="Every transaction" :subtitle="number_format($ledger->count()) . ' in this period'"
+            :padding="false" class="mt-4">
+        <div class="max-h-[32rem] overflow-y-auto">
+            <x-table :dense="true">
+                <x-slot:head>
+                    <tr>
+                        <th>Type</th>
+                        <th>Reference</th>
+                        <th>Date</th>
+                        <th class="text-right">Amount</th>
+                        <th>Note</th>
+                    </tr>
+                </x-slot:head>
 
-        {{-- Chart containers --}}
-        <div id="charts" class="mt-6 space-y-6 hidden">
-            <div class="p-4 bg-white dark:bg-gray-800 rounded shadow">
-                <canvas id="barChart" class="w-full h-64"></canvas>
-            </div>
-            <div class="p-4 bg-white dark:bg-gray-800 rounded shadow">
-                <canvas id="lineChart" class="w-full h-64"></canvas>
-            </div>
+                @forelse ($ledger as $entry)
+                    <tr>
+                        <td><x-badge :variant="$entry['variant']" size="sm">{{ $entry['type'] }}</x-badge></td>
+                        <td class="font-medium">{{ $entry['reference'] }}</td>
+                        <td class="whitespace-nowrap text-gray-500 dark:text-gray-400">
+                            {{ \Carbon\Carbon::parse($entry['date'])->format('j M Y') }}
+                        </td>
+                        <td class="text-right tabular-nums {{ $entry['amount'] < 0 ? 'text-red-700 dark:text-red-400' : '' }}">
+                            {{ $amount($entry['amount']) }}
+                        </td>
+                        <td class="text-gray-500 dark:text-gray-400">{{ $entry['note'] ?: '-' }}</td>
+                    </tr>
+                @empty
+                    <tr>
+                        <td colspan="5">
+                            <x-empty icon="inbox" title="No transactions in this period"
+                                     message="Sales, refunds, purchases and expenses all appear in this list." />
+                        </td>
+                    </tr>
+                @endforelse
+            </x-table>
         </div>
+    </x-card>
 @endsection
-    @section('scripts')
-        <script>
-            const showLineBtn = document.getElementById('show-line-chart');
-            const showBarBtn = document.getElementById('show-bar-chart');
-            const chartsWrapper = document.getElementById('charts');
 
-            let barChart, lineChart;
-            showBarBtn.addEventListener('click', () => {
-                if (lineChart) {
-                    lineChart.destroy();
-                    lineChart = null;
-                }
-                chartsWrapper.classList.remove('hidden');
+@push('scripts')
+    @include('reports.partials.charts')
 
-                if (!barChart) {
-                    const ctx = document.getElementById('barChart').getContext('2d');
-                    barChart = new Chart(ctx, {
-                        type: 'bar',
-                        data: {
-                            labels: ['Sales', 'Purchases', 'Expenses', 'Gross Profit', 'Net Profit'],
-                            datasets: [{
-                                label: '₦ Value',
-                                data: [{{ $sales }}, {{ $purchases }}, {{ $expenses }}, {{ $grossProfit }}, {{ $netProfit }}],
-                                backgroundColor: [
-                                    '#4ade80', // green
-                                    '#facc15', // yellow
-                                    '#f87171', // red
-                                    '#60a5fa', // blue
-                                    '#c084fc'  // purple
-                                ],
-                                borderWidth: 1
-                            }]
-                        },
-                        options: {
-                            responsive: true,
-                            plugins: {
-                                legend: { display: false },
-                                tooltip: {
-                                    callbacks: {
-                                        label: function (context) {
-                                            return '₦' + parseFloat(context.raw).toLocaleString();
-                                        }
-                                    }
-                                }
-                            },
-                            scales: {
-                                y: {
-                                    beginAtZero: true,
-                                    ticks: {
-                                        callback: function (value) {
-                                            return '₦' + value.toLocaleString();
-                                        }
-                                    }
-                                }
-                            },
-                            onClick: (e, elements) => {
-                                if (elements.length > 0) {
-                                    const index = elements[0].index;
-                                    const label = barChart.data.labels[index];
-                                    const value = barChart.data.datasets[0].data[index];
+    <script>
+        @php $prettyLabels = array_map(fn($d) => \Carbon\Carbon::parse($d)->format('j M'), $labels); @endphp
 
-                                    // Optional: Redirect or open modal
-                                    // if (label === 'Sales') window.location.href = '/reports/sales?from=...&to=...';
-                                }
-                            }
-                        }
-                    });
-                }
-            });
+        // The one number that matters, on its own: emphasis, not one line of five.
+        spChart('pl-net', (t) => ({
+            type: 'line',
+            data: {
+                labels: @json($prettyLabels),
+                datasets: [spLine(t, 'Net profit', @json($netProfitData), t.series[0], { fill: true })],
+            },
+            // beginAtZero off: a loss has to be allowed to go below the line.
+            options: spAxes(t, { zero: false }),
+        }));
 
-            showLineBtn.addEventListener('click', () => {
-                chartsWrapper.classList.remove('hidden');
-                if (barChart) {
-                    barChart.destroy();
-                    barChart = null;
-                }
-
-                const ctx = document.getElementById('lineChart').getContext('2d');
-                lineChart = new Chart(ctx, {
-                    type: 'line',
-                    data: {
-                        labels: {!! json_encode($labels) !!},
-                        datasets: [
-                            {
-                                label: 'Sales',
-                                data: {!! json_encode($salesData) !!},
-                                borderColor: '#4ade80',
-                                backgroundColor: '#4ade80',
-                                fill: false,
-                                tension: 0.3
-                            },
-                            {
-                                label: 'Purchases',
-                                data: {!! json_encode($purchasesData) !!},
-                                borderColor: '#facc15',
-                                backgroundColor: '#facc15',
-                                fill: false,
-                                tension: 0.3
-                            },
-                            {
-                                label: 'Expenses',
-                                data: {!! json_encode($expensesData) !!},
-                                borderColor: '#f87171',
-                                backgroundColor: '#f87171',
-                                fill: false,
-                                tension: 0.3
-                            },
-                            {
-                                label: 'Net Profit',
-                                data: {!! json_encode($netProfitData) !!},
-                                borderColor: '#3b82f6',
-                                backgroundColor: '#3b82f6',
-                                fill: false,
-                                tension: 0.3
-                            }
-                        ]
-                    },
-                    options: {
-                        responsive: true,
-                        plugins: {
-                            tooltip: {
-                                mode: 'index',
-                                intersect: false,
-                                callbacks: {
-                                    label: function (context) {
-                                        return context.dataset.label + ': ₦' + context.formattedValue;
-                                    }
-                                }
-                            },
-                            title: {
-                                display: true,
-                                text: 'Profit & Loss Over Time'
-                            }
-                        },
-                        interaction: {
-                            mode: 'nearest',
-                            axis: 'x',
-                            intersect: false
-                        },
-                        scales: {
-                            x: {
-                                title: {
-                                    display: true,
-                                    text: 'Date'
-                                }
-                            },
-                            y: {
-                                beginAtZero: true,
-                                title: {
-                                    display: true,
-                                    text: 'Amount (₦)'
-                                }
-                            }
-                        },
-                        onClick: (e, elements) => {
-                            if (elements.length > 0) {
-                                const index = elements[0].index;
-                                const selectedDate = {!! json_encode($labels) !!}[index];
-                                alert('Show details for: ' + selectedDate);
-                                // Optionally fetch and show modal or table here
-                            }
-                        }
-                    }
-                });
-            });
-        </script>
-    @endsection
+        // Three series, which is the band that stays distinguishable for everyone.
+        spChart('pl-parts', (t) => ({
+            type: 'line',
+            data: {
+                labels: @json($prettyLabels),
+                datasets: [
+                    spLine(t, 'Revenue', @json($salesData), t.series[0]),
+                    spLine(t, 'Cost of goods sold', @json($cogsData), t.series[1]),
+                    spLine(t, 'Expenses', @json($expensesData), t.series[2]),
+                ],
+            },
+            options: spAxes(t, { legend: true }),
+        }));
+    </script>
+@endpush
