@@ -47,6 +47,19 @@ return [
             'report' => false,
         ],
 
+        /*
+        | Offsite backup lives here.
+        |
+        | "s3" is the protocol, not the supplier: this same block talks to
+        | Backblaze B2, Cloudflare R2, Wasabi, DigitalOcean Spaces and a MinIO
+        | box in the back office, by setting AWS_ENDPOINT. See .env.example.
+        |
+        | `throw` is true, unlike every other disk here, and deliberately: with
+        | it false a failed upload comes back as a bare `false` with the reason
+        | thrown away, and BackupService has to tell a dead internet connection
+        | (retry tonight) from a refused access key (fetch a human). It cannot
+        | do that without the message.
+        */
         's3' => [
             'driver' => 's3',
             'key' => env('AWS_ACCESS_KEY_ID'),
@@ -56,7 +69,7 @@ return [
             'url' => env('AWS_URL'),
             'endpoint' => env('AWS_ENDPOINT'),
             'use_path_style_endpoint' => env('AWS_USE_PATH_STYLE_ENDPOINT', false),
-            'throw' => false,
+            'throw' => true,
             'report' => false,
         ],
 

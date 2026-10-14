@@ -296,23 +296,30 @@ class BackupEncrypter
         $this->requireSecret($secret);
 
         $size = $this->sourceSize($source);
-        $body = $size - self::HEADER_BYTES - self::MAC_BYTES;
-
-        if ($body < 0 || $body % self::BLOCK !== 0) {
-            throw new RuntimeException(
-                '"' . basename($source) . '" is not a complete SalesPoint backup file - it looks truncated.'
-            );
-        }
-
         $in = $this->openRead($source);
 
         try {
+            /*
+             * The magic is checked before the length. Both would catch a file
+             * that is not ours, but "this is not an encrypted backup, and here
+             * is what to do with a plain one" is a far more useful sentence
+             * than "it looks truncated" when somebody has pointed this at the
+             * wrong file.
+             */
             $magic = $this->readExactly($in, strlen(self::MAGIC), $source);
 
             if ($magic !== self::MAGIC) {
                 throw new RuntimeException(
                     '"' . basename($source) . '" is not an encrypted SalesPoint backup. If it is a plain .sql or '
                     . '.sqlite dump you can restore it directly, and a .gz needs only gunzip.'
+                );
+            }
+
+            $body = $size - self::HEADER_BYTES - self::MAC_BYTES;
+
+            if ($body < 0 || $body % self::BLOCK !== 0) {
+                throw new RuntimeException(
+                    '"' . basename($source) . '" is not a complete SalesPoint backup file - it looks truncated.'
                 );
             }
 

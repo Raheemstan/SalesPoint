@@ -41,3 +41,24 @@ Schedule::command('salespoint:backup')
     ->dailyAt($backupTime)
     ->withoutOverlapping()
     ->name('salespoint-backup');
+
+/*
+|--------------------------------------------------------------------------
+| Catching up on offsite copies
+|--------------------------------------------------------------------------
+|
+| A shop's internet is not up all night. If the upload failed at 02:00 because
+| the line was down, waiting until 02:00 tomorrow to try again means the only
+| copy of today's trading sits on the same machine as the database for 24 hours
+| - which is the exact situation offsite backup exists to avoid.
+|
+| So the uploads that are still owed are retried every hour. Each backup carries
+| its own backoff (see BackupService::recordOffsiteFailure), so this does not
+| hammer a destination that is refusing us; and with offsite backup switched off
+| the command reads one setting, counts no rows and exits.
+|
+*/
+Schedule::command('salespoint:backup --upload-only')
+    ->hourly()
+    ->withoutOverlapping()
+    ->name('salespoint-backup-upload');

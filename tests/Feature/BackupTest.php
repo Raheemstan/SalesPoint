@@ -5,6 +5,7 @@ use App\Models\Backup;
 use App\Models\Setting;
 use App\Models\User;
 use App\Services\BackupService;
+use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 
@@ -379,6 +380,72 @@ test('the configured time is used, and nonsense falls back to 02:00', function (
     // Can only happen if the row is edited outside the validated form.
     Setting::set('backup_time', 'whenever');
     expect($service->scheduleTime())->toBe('02:00');
+});
+
+test('the scheduler registers the nightly backup and the hourly catch-up', function () {
+    /*
+     * Two entries, for two different jobs. The nightly one takes a backup; the
+     * hourly one only retries offsite uploads that are still owed. A shop's
+     * internet is not up all night, and waiting until tomorrow at 02:00 to try
+     * again means today's trading sits on the same machine as the database for
+     * a day - which is the situation offsite backup exists to get out of.
+     */
+    $commands = collect(app(Schedule::class)->events())->map(fn ($event) => $event->command);
+
+    expect($commands->filter(fn ($c) => str_contains((string) $c, 'salespoint:backup'))->count())
+        ->toBeGreaterThanOrEqual(2)
+        ->and($commands->contains(fn ($c) => str_contains((string) $c, 'salespoint:backup --upload-only')))
+        ->toBeTrue();
+});
+
+// ------------------------------------------------- offsite backup, when it is off
+
+/*
+ * The offsite columns are new, and an install that has never opened that part
+ * of the screen has to carry on behaving exactly as it did. These guard the
+ * seam rather than the feature - OffsiteBackupTest covers the feature.
+ */
+
+test('a shop that has not switched offsite backup on gets the behaviour it had before', function () {
+    $backup = app(BackupService::class)->run($this->admin);
+
+    expect($backup->succeeded())->toBeTrue()
+        ->and($backup->offsite_status)->toBe(Backup::OFFSITE_OFF)
+        ->and($backup->offsite_path)->toBeNull()
+        ->and($backup->offsite_encrypted)->toBeFalse()
+        ->and($backup->offsite_attempts)->toBe(0)
+        ->and($backup->local_pruned_at)->toBeNull()
+        // Nothing is owed, so nothing is protected from retention.
+        ->and($backup->offsiteOwed())->toBeFalse()
+        ->and($backup->hasLocalCopy())->toBeTrue();
+});
+
+test('retention deletes the row outright when there is no offsite copy to keep it for', function () {
+    // The row only outlives its local file when there is a remote object left
+    // to remember. With offsite off, the old behaviour stands.
+    Setting::set('backup_retention_days', 0);
+
+    $service = app(BackupService::class);
+
+    $old = $service->run($this->admin);
+    $old->forceFill(['created_at' => now()->subDays(30)])->save();
+    $service->run($this->admin);
+
+    Setting::set('backup_retention_days', 7);
+    $service->prune();
+
+    expect(Backup::find($old->id))->toBeNull();
+});
+
+test('a failed backup is not offered an offsite copy it cannot have', function () {
+    Setting::set('backup_offsite_enabled', '1');
+    unlink($this->sourceDb);
+
+    $backup = app(BackupService::class)->run($this->admin);
+
+    expect($backup->status)->toBe(Backup::STATUS_FAILED)
+        ->and($backup->offsite_status)->toBe(Backup::OFFSITE_OFF)
+        ->and($backup->offsiteOwed())->toBeFalse();
 });
 
 // ------------------------------------------------------------- the migration
