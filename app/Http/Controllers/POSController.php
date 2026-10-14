@@ -514,11 +514,22 @@ class POSController extends Controller
      */
     private function stockRefusal(Product $product, int $quantity): ?string
     {
-        if (!$product->tracksStock() || $quantity <= (int) $product->stock_quantity) {
+        if (!$product->tracksStock()) {
             return null;
         }
 
-        return "Only {$product->stock_quantity} of {$product->name} in stock.";
+        /*
+         * stockAt(), not stock_quantity: the latter is the total across every
+         * branch, so this till would happily sell what is sitting on another
+         * shop's shelf. With branches switched off the two are the same number.
+         */
+        $onHand = $product->stockAt();
+
+        if ($quantity <= $onHand) {
+            return null;
+        }
+
+        return "Only {$onHand} of {$product->name} in stock.";
     }
 
     /**

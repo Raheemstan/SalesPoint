@@ -11,6 +11,7 @@ use App\Models\Refund;
 use App\Models\Sale;
 use App\Models\Shift;
 use App\Services\CreditService;
+use App\Services\BranchContext;
 use App\Services\ReportService;
 use App\Services\ShiftService;
 use App\Services\SupplierLedgerService;
@@ -18,10 +19,41 @@ use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\Carbon;
 use Closure;
 use Illuminate\Http\Request;
+use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Support\Facades\DB;
 
-class ReportController extends Controller
+class ReportController extends Controller implements HasMiddleware
 {
+    /**
+     * One shop, or the whole group?
+     *
+     * Reports answer for the branch you are standing in, like everything else in
+     * the app - that is what a branch manager reading them expects, and it falls
+     * out of the branch scope without a line of code per report.
+     *
+     * An owner also needs the consolidated figure, and `?scope=all` is how they
+     * ask for it. Declared once as middleware rather than threaded through
+     * fourteen actions, so there is no report that forgets to honour it, and
+     * implemented with the same BranchContext::groupWide() escape hatch the
+     * Eloquent side uses rather than a second mechanism with its own rules.
+     *
+     * Admins only: a manager runs shops, an owner owns them.
+     */
+    public static function middleware(): array
+    {
+        return [
+            function ($request, $next) {
+                $groupWide = feature('branches')
+                    && $request->input('scope') === 'all'
+                    && $request->user()?->hasRole('admin');
+
+                return $groupWide
+                    ? app(BranchContext::class)->groupWide(fn () => $next($request))
+                    : $next($request);
+            },
+        ];
+    }
+
     private const PAYMENT_METHODS = 'cash,pos,transfer';
 
     /** The trend windows the dashboard offers. */

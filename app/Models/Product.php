@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\BranchContext;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -301,5 +302,115 @@ class Product extends Model
     public function scopeRequiresSerials($query)
     {
         return $query->where('serial_required', true)->where('is_service', false);
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Per-branch stock
+    |--------------------------------------------------------------------------
+    |
+    | THE CATALOGUE IS SHARED; THE STOCK IS NOT. A product row is the same row in
+    | every shop - one SKU, one barcode, one price - and `stock_quantity` above is
+    | the GROUP-WIDE TOTAL. How that total is split between shops lives in
+    | `branch_stock`, and the two are tied together by one invariant:
+    |
+    |     stock_quantity == SUM(branch_stock.stock_quantity) for this product
+    |
+    | maintained by App\Observers\ProductStockObserver. With one branch they are
+    | the same number, which is why everything above this comment - the till, the
+    | reorder list, stock-takes, valuation, the lowStock scope - keeps working
+    | untouched for a single-site shop, and keeps answering the group-wide
+    | question for a multi-branch one.
+    |
+    | Anything that needs *this shelf* rather than *the business* asks here.
+    */
+
+    /**
+     * This product's shelf figures.
+     *
+     * Branch-scoped like BranchStock itself, so `$product->branchStock` is "my
+     * branch's row", singular in practice. Use withoutBranchScope() on it for
+     * every shop's.
+     */
+    public function branchStock()
+    {
+        return $this->hasMany(BranchStock::class);
+    }
+
+    /**
+     * Add one named branch's shelf figure to a product list as
+     * `branch_stock_quantity`, in one subquery rather than a query per row.
+     *
+     * Defaults to the branch being acted as, which is what a per-branch product
+     * list wants. COALESCE, because a product nobody has stocked here has no row
+     * and that means zero, not unknown.
+     */
+    public function scopeWithBranchStock($query, Branch|int|null $branch = null)
+    {
+        $branchId = $branch instanceof Branch ? $branch->getKey() : ($branch ?? app(BranchContext::class)->id());
+
+        return $query->addSelect([
+            'branch_stock_quantity' => BranchStock::query()
+                // Deliberately escaping the branch scope: the branch is named in
+                // the next line, so filtering by the acting one as well would
+                // make this subquery answer for the wrong shop (or for none).
+                ->forBranch($branchId)
+                ->selectRaw('COALESCE(SUM(stock_quantity), 0)')
+                ->whereColumn('branch_stock.product_id', 'products.id'),
+        ]);
+    }
+
+    /** Products a branch actually holds something of. */
+    public function scopeStockedAt($query, Branch|int|null $branch = null)
+    {
+        $branchId = $branch instanceof Branch ? $branch->getKey() : ($branch ?? app(BranchContext::class)->id());
+
+        return $query->whereHas(
+            'branchStock',
+            fn ($stock) => $stock->forBranch($branchId)->where('stock_quantity', '>', 0)
+        );
+    }
+
+    /**
+     * How many of these are on one branch's shelf.
+     *
+     * Reads a `withBranchStock()` figure when the query already loaded one, so a
+     * list of products costs no extra queries; falls back to asking directly.
+     *
+     * When branches are off this is still correct: the one branch holds the whole
+     * total, so it returns the same number `stock_quantity` does.
+     */
+    public function stockAt(Branch|int|null $branch = null): int
+    {
+        if ($branch === null && array_key_exists('branch_stock_quantity', $this->attributes)) {
+            return (int) $this->attributes['branch_stock_quantity'];
+        }
+
+        $branchId = $branch instanceof Branch ? $branch->getKey() : ($branch ?? app(BranchContext::class)->id());
+
+        if ($branchId === null) {
+            // No branches table: the total is the only answer there is.
+            return (int) $this->stock_quantity;
+        }
+
+        return BranchStock::quantity((int) $branchId, (int) $this->getKey());
+    }
+
+    /**
+     * Where every unit of this product is, shop by shop.
+     *
+     * For the one screen that is honestly group-wide: "we are out of it here,
+     * who has some?".
+     *
+     * @return \Illuminate\Support\Collection<int, int>  branch id => units
+     */
+    public function stockByBranch(): \Illuminate\Support\Collection
+    {
+        return $this->branchStock()
+            // Group-wide on purpose: the question is "which branches", so being
+            // filtered to one of them would answer nothing.
+            ->withoutBranchScope()
+            ->pluck('stock_quantity', 'branch_id')
+            ->map(fn ($units) => (int) $units);
     }
 }

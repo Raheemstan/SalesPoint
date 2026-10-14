@@ -54,6 +54,18 @@
         @endif
     </div>
 
+    {{--
+        Which branch you are working at.
+
+        Filled the same way as the hole above, and for the same reason: the
+        partial decides for itself whether it has anything to say. It renders
+        nothing at all for a single-site shop, or for a cashier who works at one
+        branch - so a shop that has never heard of branches sees no change here.
+    --}}
+    <div id="branch-switcher" class="flex items-center">
+        @includeIf('branches._switcher')
+    </div>
+
     {{-- Global search. Ctrl/Cmd+K or "/" from anywhere. --}}
     <button type="button"
             @click="$dispatch('open-palette')"

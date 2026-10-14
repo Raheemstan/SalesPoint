@@ -24,6 +24,9 @@ class User extends Authenticatable
         'name',
         'email',
         'password',
+        // Their home branch: where they are put when they sign in. Assigning it
+        // is an admin's job, like `role` - see App\Http\Controllers\UserController.
+        'branch_id',
     ];
 
     public const ROLES = ['admin', 'manager', 'cashier'];
@@ -144,5 +147,97 @@ class User extends Authenticatable
     public function auditLogs()
     {
         return $this->hasMany(AuditLog::class);
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Branches
+    |--------------------------------------------------------------------------
+    |
+    | Two relations, because there are two different facts. `branch` is where
+    | somebody normally works - it decides which shop they land in when they sign
+    | in. `branches` is the pivot for people who genuinely work at several: a
+    | relief cashier, a manager doing the rounds.
+    |
+    | A single-site shop never sees any of this: the migration puts everyone at
+    | the one branch and the switcher renders nothing for a user with one choice.
+    */
+
+    /** Their home branch. */
+    public function branch()
+    {
+        return $this->belongsTo(Branch::class);
+    }
+
+    /** The other shops they are allowed to work at. */
+    public function branches()
+    {
+        return $this->belongsToMany(Branch::class)->withTimestamps();
+    }
+
+    /**
+     * May this person act as this branch?
+     *
+     * THE RULE, AND THE REASONING
+     *
+     * A cashier may use their home branch and any branch they are assigned to,
+     * and nothing else. That is the control that matters: a till operator must
+     * not be able to read another shop's takings, void another shop's sales or
+     * sell off another shop's shelf by picking it out of a dropdown - and must
+     * not be able to do it by editing a request either, which is why this is
+     * checked on every request rather than only when the switcher is drawn.
+     *
+     * Admins and managers may use any open branch. They are the people who run
+     * the business across sites: a manager who cannot look at the other shop
+     * cannot do the job the reports exist for, and an admin can already change
+     * any figure in the system, so pinning them would be theatre rather than
+     * security.
+     *
+     * (A group large enough to want *branch* managers - pinned to one site and
+     * unable to see the rest - wants a fourth role rather than a change here;
+     * assigning them as a cashier-shaped user would take away the manager
+     * screens they need.)
+     *
+     * A closed branch is nobody's, including an admin's: it is closed.
+     */
+    public function canUseBranch(Branch $branch): bool
+    {
+        if (!$branch->is_active) {
+            return false;
+        }
+
+        if ($this->hasAnyRole(['admin', 'manager'])) {
+            return true;
+        }
+
+        if ($this->branch_id !== null && (int) $this->branch_id === (int) $branch->getKey()) {
+            return true;
+        }
+
+        return $this->branches()->whereKey($branch->getKey())->exists();
+    }
+
+    /**
+     * Every branch this person may switch between, in switcher order.
+     *
+     * One query. The header renders nothing when this holds fewer than two, so
+     * a single-site shop and a cashier tied to one till both see no switcher at
+     * all.
+     *
+     * @return \Illuminate\Support\Collection<int, Branch>
+     */
+    public function availableBranches(): \Illuminate\Support\Collection
+    {
+        if ($this->hasAnyRole(['admin', 'manager'])) {
+            return Branch::query()->active()->ordered()->get();
+        }
+
+        return Branch::query()
+            ->active()
+            ->where(fn ($query) => $query
+                ->whereKey($this->branch_id)
+                ->orWhereHas('staff', fn ($staff) => $staff->whereKey($this->getKey())))
+            ->ordered()
+            ->get();
     }
 }

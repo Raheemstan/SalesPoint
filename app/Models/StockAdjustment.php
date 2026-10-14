@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToBranch;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
@@ -15,7 +16,7 @@ use Illuminate\Database\Eloquent\Model;
 class StockAdjustment extends Model
 {
     /** @use HasFactory<\Database\Factories\StockAdjustmentFactory> */
-    use HasFactory;
+    use BelongsToBranch, HasFactory;
 
     public const TYPE_INCREASE = 'increase';
     public const TYPE_DECREASE = 'decrease';

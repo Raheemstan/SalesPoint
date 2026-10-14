@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToBranch;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
@@ -13,7 +14,7 @@ use Illuminate\Database\Eloquent\Model;
 class StockTake extends Model
 {
     /** @use HasFactory<\Database\Factories\StockTakeFactory> */
-    use HasFactory;
+    use BelongsToBranch, HasFactory;
 
     public const STATUS_DRAFT = 'draft';
     public const STATUS_SUBMITTED = 'submitted';

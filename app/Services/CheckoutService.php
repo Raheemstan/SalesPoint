@@ -158,8 +158,17 @@ class CheckoutService
                     throw new DomainException('A line must be for at least one ' . strtolower(term('product')) . '.');
                 }
 
-                // A service has no stock and so can never be short of it.
-                if ($product->tracksStock() && $product->stock_quantity < $quantity) {
+                /*
+                 * A service has no stock and so can never be short of it.
+                 *
+                 * stockAt(), not stock_quantity: the latter is the group-wide
+                 * total across every branch, so comparing against it would let
+                 * one shop sell stock sitting on another shop's shelf. With
+                 * branches switched off the two are the same number.
+                 */
+                $onHand = $product->tracksStock() ? $product->stockAt() : 0;
+
+                if ($product->tracksStock() && $onHand < $quantity) {
                     if (!$allowNegativeStock) {
                         throw new DomainException("{$product->name} is out of stock or has insufficient quantity.");
                     }
@@ -174,8 +183,8 @@ class CheckoutService
                         '%s: %d sold with %d in stock, leaving %d.',
                         $product->name,
                         $quantity,
-                        (int) $product->stock_quantity,
-                        (int) $product->stock_quantity - $quantity
+                        $onHand,
+                        $onHand - $quantity
                     );
                 }
 

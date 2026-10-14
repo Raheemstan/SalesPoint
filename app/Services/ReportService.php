@@ -8,6 +8,7 @@ use App\Models\Purchase;
 use App\Models\Sale;
 use App\Models\Shift;
 use App\Models\Supplier;
+use App\Services\BranchContext;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -75,7 +76,7 @@ class ReportService
      */
     public function takings(Carbon $start, Carbon $end, ?int $userId = null): array
     {
-        $sales = DB::table('sales')
+        $sales = $this->branch(DB::table('sales'))
             ->whereBetween('created_at', [$start, $end])
             ->when($userId, fn ($q) => $q->where('user_id', $userId))
             ->selectRaw('COALESCE(SUM(grand_total), 0) as gross')
@@ -116,22 +117,22 @@ class ReportService
      */
     public function profit(Carbon $start, Carbon $end): array
     {
-        $revenue = (float) DB::table('sales')
+        $revenue = (float) $this->branch(DB::table('sales'))
             ->whereBetween('created_at', [$start, $end])
             ->sum(DB::raw('grand_total - tax_amount'));
 
-        $refunded = (float) DB::table('refunds')
+        $refunded = (float) $this->branch(DB::table('refunds'), 'refunds')
             ->whereBetween('created_at', [$start, $end])
             ->sum(DB::raw('total_amount - tax_amount'));
 
-        $cogs = (float) DB::table('sale_items')
-            ->join('sales', 'sales.id', '=', 'sale_items.sale_id')
+        $cogs = (float) $this->branch(DB::table('sale_items')
+            ->join('sales', 'sales.id', '=', 'sale_items.sale_id'))
             ->whereBetween('sales.created_at', [$start, $end])
             ->sum(DB::raw('sale_items.quantity * sale_items.cost_price'));
 
         // Goods back on the shelf are no longer a cost; written-off returns stay one.
-        $returned = (float) DB::table('refund_items')
-            ->join('refunds', 'refunds.id', '=', 'refund_items.refund_id')
+        $returned = (float) $this->branch(DB::table('refund_items')
+            ->join('refunds', 'refunds.id', '=', 'refund_items.refund_id'), 'refunds')
             ->where('refund_items.restocked', true)
             ->whereBetween('refunds.created_at', [$start, $end])
             ->sum(DB::raw('refund_items.quantity * refund_items.cost_price'));
@@ -150,7 +151,7 @@ class ReportService
     public function takingsByDay(Carbon $start, Carbon $end, ?int $userId = null): array
     {
         $sales = $this->perDay(
-            DB::table('sales')->when($userId, fn ($q) => $q->where('user_id', $userId)),
+            $this->branch(DB::table('sales'))->when($userId, fn ($q) => $q->where('user_id', $userId)),
             'sales.created_at',
             'sales.grand_total',
             $start,
@@ -200,8 +201,8 @@ class ReportService
         $tendered = $this->hasTenderRows();
 
         if ($tendered) {
-            $this->addMethodRows($taken, DB::table('sale_payments')
-                ->join('sales', 'sales.id', '=', 'sale_payments.sale_id')
+            $this->addMethodRows($taken, $this->branch(DB::table('sale_payments')
+                ->join('sales', 'sales.id', '=', 'sale_payments.sale_id'))
                 ->whereBetween('sales.created_at', [$start, $end])
                 ->where('sales.status', '!=', Sale::STATUS_VOIDED)
                 ->groupBy('sale_payments.method')
@@ -213,7 +214,7 @@ class ReportService
          * What the till actually took: handed over, less change given back. On a
          * credit sale that is only the deposit, because the rest never arrived.
          */
-        $fallback = DB::table('sales')
+        $fallback = $this->branch(DB::table('sales'))
             ->whereBetween('sales.created_at', [$start, $end])
             ->where('sales.status', '!=', Sale::STATUS_VOIDED)
             ->groupBy('sales.payment_method')
@@ -227,7 +228,7 @@ class ReportService
 
         $this->addMethodRows($taken, $fallback->get());
 
-        $this->addMethodRows($given, DB::table('refunds')
+        $this->addMethodRows($given, $this->branch(DB::table('refunds'), 'refunds')
             ->whereBetween('refunds.created_at', [$start, $end])
             ->groupBy('refunds.method')
             ->selectRaw('refunds.method as method, SUM(refunds.total_amount) as total')
@@ -267,8 +268,8 @@ class ReportService
      */
     public function productPerformance(Carbon $start, Carbon $end): Collection
     {
-        $sold = DB::table('sale_items')
-            ->join('sales', 'sales.id', '=', 'sale_items.sale_id')
+        $sold = $this->branch(DB::table('sale_items')
+            ->join('sales', 'sales.id', '=', 'sale_items.sale_id'))
             ->whereBetween('sales.created_at', [$start, $end])
             ->groupBy('sale_items.product_id')
             ->selectRaw('sale_items.product_id as product_id')
@@ -278,8 +279,8 @@ class ReportService
             ->get()
             ->keyBy('product_id');
 
-        $back = DB::table('refund_items')
-            ->join('refunds', 'refunds.id', '=', 'refund_items.refund_id')
+        $back = $this->branch(DB::table('refund_items')
+            ->join('refunds', 'refunds.id', '=', 'refund_items.refund_id'), 'refunds')
             ->whereBetween('refunds.created_at', [$start, $end])
             ->groupBy('refund_items.product_id')
             ->selectRaw('refund_items.product_id as product_id')
@@ -352,7 +353,7 @@ class ReportService
      */
     public function cashierPerformance(Carbon $start, Carbon $end): Collection
     {
-        $sales = DB::table('sales')
+        $sales = $this->branch(DB::table('sales'))
             ->whereBetween('created_at', [$start, $end])
             ->groupBy('user_id')
             ->selectRaw('user_id')
@@ -365,15 +366,15 @@ class ReportService
             ->keyBy('user_id');
 
         // Money handed back on their sales: subtracted from their takings.
-        $againstTheirSales = DB::table('refunds')
-            ->join('sales', 'sales.id', '=', 'refunds.sale_id')
+        $againstTheirSales = $this->branch(DB::table('refunds')
+            ->join('sales', 'sales.id', '=', 'refunds.sale_id'), 'refunds')
             ->whereBetween('refunds.created_at', [$start, $end])
             ->groupBy('sales.user_id')
             ->selectRaw('sales.user_id as user_id, COALESCE(SUM(refunds.total_amount), 0) as total')
             ->pluck('total', 'user_id');
 
         // Refunds they themselves put through, whoever made the original sale.
-        $processed = DB::table('refunds')
+        $processed = $this->branch(DB::table('refunds'), 'refunds')
             ->whereBetween('created_at', [$start, $end])
             ->groupBy('user_id')
             ->selectRaw('user_id, COUNT(*) as count, COALESCE(SUM(total_amount), 0) as total')
@@ -447,6 +448,14 @@ class ReportService
      */
     public function valuation(): array
     {
+        /*
+         * Group-wide, and knowingly so. This reads `products.stock_quantity`,
+         * which is the total across every branch by design (see
+         * App\Models\BranchStock) - so a multi-branch shop gets the value of
+         * everything it owns, which is the right answer for a balance sheet and
+         * the wrong one for "what is on this shelf". The per-branch version is
+         * on the branch page, built from `branch_stock`.
+         */
         $rows = DB::table('products')
             ->leftJoin('categories', 'categories.id', '=', 'products.category_id')
             ->whereNull('products.deleted_at')      // DB::table() does not know about soft deletes
@@ -643,6 +652,13 @@ class ReportService
      */
     public function totalOwed(): array
     {
+        /*
+         * Deliberately NOT narrowed to a branch. A customer owes the business,
+         * not a building: they can buy in one shop and pay in another, and
+         * splitting the debt by where it was incurred would show two balances
+         * for one person and chase them twice. Receivables and payables are
+         * group-wide for the same reason.
+         */
         $row = DB::table('sales')
             ->where('balance_due', '>', 0)
             ->where('status', '!=', Sale::STATUS_VOIDED)
@@ -747,7 +763,7 @@ class ReportService
     /** Raised with the supplier but not yet delivered: not a debt yet, but money coming. */
     private function orderedNotReceived(): Collection
     {
-        return DB::table('purchases')
+        return $this->branch(DB::table('purchases'), 'purchases')
             ->whereNull('deleted_at')
             ->where('status', Purchase::STATUS_ORDERED)
             ->groupBy('supplier_id')
@@ -773,7 +789,7 @@ class ReportService
         $date = 'DATE(purchases.purchase_date)';
         $owed = 'purchases.total_amount - purchases.amount_paid';
 
-        $rows = DB::table('purchases')
+        $rows = $this->branch(DB::table('purchases'), 'purchases')
             ->whereNull('deleted_at')
             ->where('status', Purchase::STATUS_RECEIVED)
             ->whereColumn('total_amount', '>', 'amount_paid')
@@ -836,6 +852,42 @@ class ReportService
     */
 
     /**
+     * Narrow a query-builder read to the branch being acted as.
+     *
+     * WHY THIS HAS TO BE HERE AT ALL
+     *
+     * Every method in this class aggregates through DB::table() rather than
+     * through Eloquent, deliberately: a report over a year has to cost the same
+     * number of queries as a report over a week. The price of that is that the
+     * global branch scope - which is an *Eloquent* scope - does not apply to any
+     * of it. So the branch is applied by hand, and it is applied in exactly one
+     * place so that it cannot be applied to five reports and forgotten on the
+     * sixth.
+     *
+     * HOW IT BEHAVES
+     *
+     *   - single-site shop: scoping() is false, nothing is added, and every
+     *     figure is exactly what it has always been;
+     *   - multi-branch: the report answers for the shop you are standing in,
+     *     which is what the rest of the app does and so what a branch manager
+     *     reading it expects;
+     *   - inside BranchContext::groupWide(): scoping() is false again, so the
+     *     same report answers for the whole group. That is the owner's
+     *     consolidated view, and it is the *same* escape hatch the Eloquent side
+     *     uses rather than a second one with its own rules.
+     *
+     * @param  string  $table  the aliased or real table carrying `branch_id`
+     */
+    private function branch($query, string $table = 'sales')
+    {
+        $branches = app(BranchContext::class);
+
+        return $branches->scoping()
+            ? $query->where($table . '.branch_id', $branches->id())
+            : $query;
+    }
+
+    /**
      * Revenue, cost and the two figures derived from them, rounded once.
      *
      * @return array{revenue: float, cogs: float, gross_profit: float, margin: float}
@@ -875,7 +927,9 @@ class ReportService
      */
     private function refundQuery(?int $userId)
     {
-        $query = DB::table('refunds');
+        // Refunds carry their own branch - the money left a particular drawer -
+        // so they are narrowed directly rather than through the sale.
+        $query = $this->branch(DB::table('refunds'), 'refunds');
 
         if ($userId !== null) {
             $query->join('sales', 'sales.id', '=', 'refunds.sale_id')->where('sales.user_id', $userId);

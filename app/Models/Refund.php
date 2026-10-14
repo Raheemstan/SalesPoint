@@ -2,10 +2,13 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToBranch;
 use Illuminate\Database\Eloquent\Model;
 
 class Refund extends Model
 {
+    use BelongsToBranch;
+
     protected $fillable = ['sale_id', 'user_id', 'shift_id', 'total_amount', 'credit_applied', 'tax_amount', 'method', 'reason', 'is_void'];
 
     protected $casts = ['is_void' => 'boolean'];

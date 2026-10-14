@@ -2,10 +2,13 @@
 
 use App\Http\Controllers\AdjustmentController;
 use App\Http\Controllers\AuditLogController;
+use App\Http\Controllers\BranchController;
+use App\Http\Controllers\StockTransferController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\CustomerController;
 use App\Http\Controllers\CustomerPaymentController;
 use App\Http\Controllers\ExpenseController;
+use App\Http\Controllers\OfflineSyncController;
 use App\Http\Controllers\ParkedSaleController;
 use App\Http\Controllers\POSController;
 use App\Http\Controllers\ProductController;
@@ -85,6 +88,15 @@ Route::middleware('auth')->group(function () {
         // Attach / detach the customer a sale belongs to (needed for credit sales).
         Route::post('/customer', [POSController::class, 'setCustomer'])->name('customer');
 
+        /*
+        | Offline sales. Power and network cuts are routine in the markets this
+        | app is sold into, so the till queues sales locally and replays them here
+        | when the connection returns. Every sale carries a client-generated id so
+        | a replay can never bank the same sale twice.
+        */
+        Route::post('/sync', [OfflineSyncController::class, 'store'])->name('sync');
+        Route::get('/sync/status', [OfflineSyncController::class, 'status'])->name('sync.status');
+
         // Held ("parked") carts: park a sale, serve someone else, resume it later.
         Route::get('/parked', [ParkedSaleController::class, 'index'])->name('parked');
         Route::post('/park', [ParkedSaleController::class, 'store'])->name('park');
@@ -110,6 +122,13 @@ Route::middleware('auth')->group(function () {
         Route::get('/{shift}', [ShiftController::class, 'show'])->name('show');
         Route::post('/{shift}/close', [ShiftController::class, 'close'])->name('close');
     });
+
+    /*
+    | Branches. Switching is for anyone who works at more than one site; the
+    | branches themselves, and stock moving between them, are a manager's job.
+    | All of it 404s for a single-site shop (feature('branches')).
+    */
+    Route::post('/branches/switch', [BranchController::class, 'switch'])->name('branches.switch');
 
     // Customer lookup at the till needs to work for cashiers; managing them does not.
     Route::get('/customers/search', [CustomerController::class, 'search'])->name('customers.search');
@@ -222,6 +241,19 @@ Route::middleware('auth')->group(function () {
             Route::put('/{stockTake}', [StockTakeController::class, 'update'])->name('update');
             Route::post('/{stockTake}/approve', [StockTakeController::class, 'approve'])->name('approve');
             Route::delete('/{stockTake}', [StockTakeController::class, 'destroy'])->name('destroy');
+        });
+
+        Route::resource('branches', BranchController::class)->except(['create', 'edit']);
+
+        // Moving stock from one branch to another: raised at one end, received at
+        // the other, so stock in transit is never counted in two places at once.
+        Route::prefix('transfers')->name('transfers.')->group(function () {
+            Route::get('/', [StockTransferController::class, 'index'])->name('index');
+            Route::get('/create', [StockTransferController::class, 'create'])->name('create');
+            Route::post('/', [StockTransferController::class, 'store'])->name('store');
+            Route::get('/{transfer}', [StockTransferController::class, 'show'])->name('show');
+            Route::post('/{transfer}/receive', [StockTransferController::class, 'receive'])->name('receive');
+            Route::post('/{transfer}/cancel', [StockTransferController::class, 'cancel'])->name('cancel');
         });
 
         Route::post('/adjustments', [AdjustmentController::class, 'store'])->name('adjustments.store');

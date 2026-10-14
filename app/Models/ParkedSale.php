@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToBranch;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
@@ -21,7 +22,7 @@ use Illuminate\Database\Eloquent\Model;
 class ParkedSale extends Model
 {
     /** @use HasFactory<\Database\Factories\ParkedSaleFactory> */
-    use HasFactory;
+    use BelongsToBranch, HasFactory;
 
     /**
      * No 0/O or 1/I: the reference exists to be read aloud across a counter

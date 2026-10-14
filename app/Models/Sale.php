@@ -2,13 +2,14 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToBranch;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
 class Sale extends Model
 {
     /** @use HasFactory<\Database\Factories\SaleFactory> */
-    use HasFactory;
+    use BelongsToBranch, HasFactory;
 
     public const STATUS_COMPLETED = 'completed';
     public const STATUS_PARTIAL = 'partially_refunded';
@@ -53,12 +54,28 @@ class Sale extends Model
         // charge named rather than folded into the total.
         'service_charge',
         'service_charge_label',
+        /*
+         * Offline sales. `client_uuid` is the id the till gave this sale on the
+         * device, before any server saw it; its unique index is what stops a
+         * replayed queue banking the same sale twice. `synced_at` is when the
+         * server took it, which is not when it was sold - `sale_date` and
+         * `created_at` carry that.
+         */
+        'client_uuid',
+        'synced_at',
     ];
 
     protected $casts = [
         'voided_at' => 'datetime',
         'due_date' => 'date',
+        'synced_at' => 'datetime',
     ];
+
+    /** Was this sale rung up offline and replayed, rather than taken live? */
+    public function wasOffline(): bool
+    {
+        return $this->client_uuid !== null;
+    }
 
     public function user()
     {

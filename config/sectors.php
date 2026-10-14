@@ -61,6 +61,7 @@ return [
         'prescriptions' => 'Record the prescriber and prescription against a sale',
         'tips' => 'Take a tip or service charge at the till',
         'loyalty' => 'Award and redeem loyalty points',
+        'branches' => 'Run more than one shop, each with its own stock, staff and takings',
     ],
 
     /*

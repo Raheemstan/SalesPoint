@@ -26,6 +26,16 @@ return Application::configure(basePath: dirname(__DIR__))
          * sits after StartSession and can see who is signed in.
          */
         $middleware->appendToGroup('web', \App\Http\Middleware\EnsureUserIsActive::class);
+
+        /*
+         * Which branch this request is acting as. Appended, so it runs after
+         * StartSession and after authentication - it needs both the signed-in
+         * user and their remembered choice, and neither exists earlier.
+         *
+         * After EnsureUserIsActive on purpose: a deactivated user is turned away
+         * before anything bothers working out where they are standing.
+         */
+        $middleware->appendToGroup('web', \App\Http\Middleware\SetActiveBranch::class);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //

@@ -198,6 +198,21 @@
                     'route' => 'suppliers.index',
                     'active' => ['suppliers.*'],
                 ],
+                [
+                    // Only present for a group running more than one shop.
+                    'label' => 'Branches',
+                    'icon' => 'building',
+                    'route' => 'branches.index',
+                    'active' => ['branches.*'],
+                    'when' => feature('branches'),
+                ],
+                [
+                    'label' => 'Stock transfers',
+                    'icon' => 'truck',
+                    'route' => 'transfers.index',
+                    'active' => ['transfers.*'],
+                    'when' => feature('branches'),
+                ],
             ],
         ],
 
