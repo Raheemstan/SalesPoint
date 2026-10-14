@@ -45,7 +45,62 @@
     */
     $jsMoney = "money(v) { return this.symbol + Number(v).toLocaleString(undefined, "
         . "{ minimumFractionDigits: this.dp, maximumFractionDigits: this.dp }); }";
+
+    /*
+    | The cart as the device will have to remember it if the line drops.
+    |
+    | The cart lives in the server session, so the only copy a till has offline is
+    | this one. It is re-rendered with the partial on every change, so it cannot go
+    | stale, and it is written as JSON rather than built from the DOM because
+    | reading prices back out of formatted text is how a receipt ends up wrong.
+    |
+    | THESE FIGURES ARE NOT AUTHORITATIVE. They go up with a queued sale as
+    | `claimed_total` and as the numbers on the provisional receipt. The server
+    | recomputes every one of them from the catalogue before it banks anything -
+    | see App\Services\CheckoutService. The unit prices are the exception, and
+    | bounded: a queued sale is banked at the price the customer agreed to, within
+    | a tolerance of today's price.
+    */
+    $offlineSnapshot = [
+        'lines' => collect($cart)->values()->map(fn ($line) => [
+            'product_id' => (int) $line['product_id'],
+            'name' => $line['name'],
+            'quantity' => (int) $line['quantity'],
+            'price' => (float) $line['price'],
+            'discount_type' => $line['discount_type'] ?? null,
+            'discount_value' => isset($line['discount_value']) ? (float) $line['discount_value'] : null,
+        ])->all(),
+        'order_discount' => $orderDiscount ?: null,
+        'service_charge' => $serviceCharge['amount'] > 0
+            ? ['type' => session('cart_service_charge.type'), 'value' => session('cart_service_charge.value'), 'label' => $serviceCharge['label']]
+            : null,
+        'customer_name' => $customer?->name,
+        // Who was at the till and which drawer they were on, so a sale queued
+        // here is attributed to them and not to whoever syncs the device.
+        'cashier_id' => auth()->id(),
+        'shift_id' => $openShift?->id,
+        'totals' => [
+            'subtotal' => (float) ($totals['subtotal'] ?? 0),
+            'discount' => (float) ($totals['discount_total'] ?? 0),
+            'tax' => (float) ($totals['tax'] ?? 0),
+            'tax_rate' => (float) ($totals['tax_rate'] ?? 0),
+            'service_charge' => (float) $serviceCharge['amount'],
+            'grand_total' => (float) $charged,
+        ],
+    ];
 @endphp
+
+{{--
+    Read by resources/js/offline/till.js on every render, and mirrored into
+    IndexedDB so public/sw.js can queue a submit this page did not catch.
+
+    HEX_TAG matters here: a product name is typed by a person, and one called
+    "</script>" must not be able to break out of this block.
+--}}
+<script type="application/json" id="offline-cart-snapshot">{!! json_encode(
+    $offlineSnapshot,
+    JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT
+) !!}</script>
 
 <div class="flex items-center justify-between gap-2">
     <h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100">

@@ -14,7 +14,13 @@
 |
 | Scope note: the worker caches the shell and static assets only. It never
 | caches a page or an API response, so it cannot serve one cashier's data to
-| another or a stale till. Offline sale queueing is a separate job.
+| another or a stale till.
+|
+| It has exactly one write-side job, added with offline sales: a POST to
+| /pos/checkout that cannot reach the server at all is written into the offline
+| queue instead of failing into a browser error page. That exception, and the
+| guarantees it keeps, are documented at the top of public/sw.js. Replaying the
+| queue is the page's job - see resources/js/offline/.
 |
 */
 

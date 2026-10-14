@@ -22,6 +22,14 @@
         */
     @endphp
 
+    {{--
+        Offline state, held sales and refusals. Rendered above everything else
+        on purpose: a cashier has to know whether the till has a line *before*
+        they start ringing something up, and a refused offline sale has to be
+        the first thing on the screen.
+    --}}
+    @include('pos.offline')
+
     {{-- Renders nothing when a shift is open; looks the shift up itself. --}}
     <div class="mb-4">
         @include('shifts.partials.no-open-shift', ['openShift' => $openShift])
@@ -266,6 +274,13 @@
 
                 // Alpine picks up the new x-data trees on its own.
                 if (refocus) focusSearch();
+
+                /*
+                 * The cart panel carries the snapshot a sale is queued from when
+                 * the line drops (resources/js/offline), so the offline code has
+                 * to re-read it every time this replaces the panel.
+                 */
+                window.dispatchEvent(new CustomEvent('salespoint:cart-rendered'));
             }
 
             // The cart partial's Alpine components use these.

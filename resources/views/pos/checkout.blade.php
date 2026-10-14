@@ -223,6 +223,22 @@
 
     {{-- Who, what and when --}}
     <p>Invoice: <strong>{{ $sale->invoice_number }}</strong></p>
+    @if ($sale->wasOffline())
+        {{--
+            This sale was rung up with no network and banked later, so the
+            customer was handed a slip carrying a provisional reference instead
+            of this invoice number. Printing both here is what closes that loop:
+            a customer who comes back with the slip can be matched to this
+            receipt without anyone having to go digging in a log.
+        --}}
+        @if ($provisionalReference)
+            <p>Held on the till as: <strong>{{ $provisionalReference }}</strong></p>
+        @endif
+        <p class="muted">
+            Taken offline and banked
+            {{ $sale->synced_at ? $sale->synced_at->format('d M Y h:i A') : 'later' }}.
+        </p>
+    @endif
     @if ($sale->customer)
         <p>{{ term('customer') }}: <strong>{{ $sale->customer->name }}</strong>
             @if ($sale->customer->phone)

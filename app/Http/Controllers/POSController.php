@@ -2,15 +2,15 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\AuditLog;
 use App\Models\Customer;
-use App\Models\InventoryLog;
+use App\Models\OfflineSaleAttempt;
 use App\Models\ParkedSale;
 use App\Models\Product;
 use App\Models\Sale;
-use App\Models\SaleItem;
 use App\Models\SalePayment;
+use App\Services\CheckoutService;
 use App\Services\CreditService;
+use App\Services\OfflineSyncService;
 use App\Services\PaymentSplitService;
 use App\Services\SaleCalculator;
 use App\Services\ShiftService;
@@ -18,7 +18,6 @@ use App\Services\TableOrderService;
 use DomainException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Mike42\Escpos\PrintConnectors\WindowsPrintConnector;
@@ -59,13 +58,67 @@ class POSController extends Controller
         // The search box covers the rest of the catalogue.
         $products = Product::orderBy('name')->limit(200)->get();
 
-        return view('pos.index', array_merge($till, compact(
+        return view('pos.index', array_merge($till, $this->offlineState(), compact(
             'products', 'cart', 'totals', 'orderDiscount', 'discountLimit', 'serviceCharge'
         )));
     }
 
     /**
-     * The tip or service charge sitting on this cart, recomputed from the bill.
+     * What the till needs in order to hold sales when the line drops, and to
+     * show the ones it is already holding.
+     *
+     * Only on the full page, not on the AJAX cart partial: the panel is rendered
+     * once and keeps its own state, and re-rendering it under the cashier every
+     * time they scan something would close it mid-read.
+     *
+     * The refused list comes from the server rather than from the device, so a
+     * refusal is visible even with JavaScript broken, on a till that has never
+     * held a sale, and after the device that took it has been wiped.
+     *
+     * @return array<string, mixed>
+     */
+    private function offlineState(): array
+    {
+        $status = app(OfflineSyncService::class)->summaryFor(auth()->user());
+
+        return [
+            'offlineRejected' => $status['rejected'],
+            'offlineRefused' => $status['needs_attention'],
+            'offlineConfig' => [
+                'syncUrl' => route('pos.sync'),
+                'statusUrl' => route('pos.sync.status'),
+                'batch' => OfflineSyncService::MAX_BATCH,
+                // So the panel can tell when the list Blade rendered has gone
+                // stale (a sale refused since this page loaded).
+                'serverRejectedCount' => $status['rejected'],
+                'cashierId' => auth()->id(),
+                'shiftId' => app(ShiftService::class)->currentFor(auth()->user())?->id,
+                // Formatting, so no symbol is ever written into the JavaScript.
+                'symbol' => currency(),
+                'decimals' => (int) setting('currency_decimals', config('sectors.currency.decimals')),
+                // The trade's own words: a pharmacy holds "prescriptions", a
+                // restaurant "bills". term() decides, never a literal.
+                'saleTerm' => term('sale'),
+                'salesTerm' => term('sale', true),
+                'customerTerm' => term('customer'),
+                // For the provisional receipt, which has to render with no network.
+                'cashierName' => auth()->user()?->name,
+                'storeName' => setting('store_name', 'SalesPoint'),
+                'storeMotto' => setting('store_motto'),
+                'storeAddress' => setting('store_address'),
+                'storePhone' => setting('store_phone'),
+                'footer' => setting('receipt_footer'),
+                'width' => setting('receipt_size', '80mm') === '58mm' ? '54mm' : '76mm',
+                'methodLabels' => collect(self::PAYMENT_METHODS)
+                    ->mapWithKeys(fn ($method) => [$method => SalePayment::label($method)])
+                    ->all(),
+            ],
+        ];
+    }
+
+    /**
+     * The tip or service charge sitting on this cart, recomputed from the bill,
+     * for the cart screen.
      *
      * Table service hands a charge over in `session('cart_service_charge')` as
      * `['type', 'value', 'amount', 'label']`. The `amount` in there is what was
@@ -76,10 +129,13 @@ class POSController extends Controller
      * (TableOrderService::serviceCharge, which takes the percentage on the bill
      * including tax - the number someone tapping "10%" is looking at).
      *
-     * @param  bool  $strict  throw on a malformed charge instead of dropping it
+     * Checkout does the same recomputation against its own final total, inside
+     * CheckoutService, which is why this one only has to serve the screen and may
+     * drop a bad charge rather than refuse the sale.
+     *
      * @return array{amount: float, label: ?string}
      */
-    private function serviceChargeFor(float $billTotal, bool $strict = false): array
+    private function serviceChargeFor(float $billTotal): array
     {
         $none = ['amount' => 0.0, 'label' => null];
         $charge = session('cart_service_charge');
@@ -97,10 +153,6 @@ class POSController extends Controller
                 $charge['value'] ?? null
             );
         } catch (DomainException $e) {
-            if ($strict) {
-                throw $e;
-            }
-
             // Same policy as an invalid discount: drop it and say so rather than
             // leave the till unable to take any payment at all.
             session()->forget('cart_service_charge');
@@ -234,23 +286,20 @@ class POSController extends Controller
         return SaleCalculator::calculate($cart, session('cart_discount'), (float) setting('tax_rate', 0));
     }
 
+    /**
+     * The biggest discount the signed-in cashier may give, for the cart screen.
+     *
+     * Defined once, in CheckoutService, because checkout enforces the same limit
+     * and the two must never disagree about what a cashier is allowed to do.
+     */
     private function cashierDiscountLimit(): ?float
     {
-        // Managers and admins are not limited.
-        if (auth()->user()?->hasAnyRole(['admin', 'manager'])) {
-            return null;
-        }
-
-        return (float) setting('max_cashier_discount', 10);
+        return app(CheckoutService::class)->discountLimitFor(auth()->user());
     }
 
     private function assertDiscountAllowed(array $totals): void
     {
-        $limit = $this->cashierDiscountLimit();
-
-        if ($limit !== null && SaleCalculator::discountPercent($totals) > $limit + 0.005) {
-            throw new DomainException("Discounts above {$limit}% need a manager.");
-        }
+        app(CheckoutService::class)->assertDiscountAllowed($totals, auth()->user());
     }
 
     /** Apply a cart mutation; if the result is invalid or not allowed, put the cart back and say why. */
@@ -573,15 +622,17 @@ class POSController extends Controller
      * Checkout and process sale
      *
      * Totals are never taken from the browser: prices, discounts and tax are all
-     * recomputed here from the database, the session cart and the tax setting.
-     * The browser says *how* the money arrived; this works out how much.
+     * recomputed from the database, the session cart and the tax setting. The
+     * browser says *how* the money arrived; CheckoutService works out how much.
+     *
+     * This method's job is the session and the HTTP response - reading the cart,
+     * validating the form, clearing the keys afterwards, redirecting to the
+     * receipt. The sale itself is created by CheckoutService, which the offline
+     * sync endpoint also calls, so there is exactly one piece of code in the app
+     * that knows how to turn a cart into money.
      */
-    public function checkout(
-        Request $request,
-        CreditService $credit,
-        ShiftService $shifts,
-        PaymentSplitService $split
-    ) {
+    public function checkout(Request $request, CheckoutService $checkouts)
+    {
         $cart = session()->get('cart', []);
 
         if (empty($cart)) {
@@ -610,163 +661,27 @@ class POSController extends Controller
         ]);
 
         try {
-            $sale = DB::transaction(function () use ($cart, $data, $request, $credit, $shifts, $split) {
-                $products = [];
-                $lines = [];
-
-                // Lock each product row so two cashiers can't both sell the last unit,
-                // and price every line from the database rather than the session copy.
-                foreach ($cart as $id => $item) {
-                    $product = Product::lockForUpdate()->find($item['product_id']);
-
-                    if (!$product) {
-                        throw new DomainException('A product in the cart no longer exists.');
-                    }
-
-                    // A service has no stock and so can never be short of it.
-                    if ($product->tracksStock() && $product->stock_quantity < $item['quantity']) {
-                        throw new DomainException("{$product->name} is out of stock or has insufficient quantity.");
-                    }
-
-                    $products[$id] = $product;
-                    $lines[$id] = [
-                        'price' => $product->sale_price,
-                        'quantity' => (int) $item['quantity'],
-                        'discount_type' => $item['discount_type'] ?? null,
-                        'discount_value' => $item['discount_value'] ?? null,
-                    ];
-                }
-
-                $orderDiscount = session('cart_discount');
-                $taxRate = (float) setting('tax_rate', 0);
-                $totals = SaleCalculator::calculate($lines, $orderDiscount, $taxRate);
-
-                $this->assertDiscountAllowed($totals);
-
-                /*
-                 * A tip or service charge goes on top of the bill, tax included.
-                 * Recomputed here from the type and value, never taken from the
-                 * session's quoted `amount`, and read before Sale::create because
-                 * the table-service observer clears the key the moment the sale
-                 * row appears.
-                 */
-                $service = $this->serviceChargeFor($totals['grand_total'], true);
-
-                $grandTotal = round($totals['grand_total'] + $service['amount'], 2);
-
+            $sale = $checkouts->create([
+                'lines' => $cart,
+                'order_discount' => session('cart_discount'),
+                'tenders' => $this->tendersFrom($data),
                 // The cashier picks the customer on the cart; the form posts it back.
-                $customerId = $data['customer_id'] ?? session('cart_customer');
-                $customer = $customerId ? Customer::find($customerId) : null;
-
-                $onCredit = (bool) ($data['on_credit'] ?? false);
-
-                if ($onCredit && !feature('credit')) {
-                    throw new DomainException('Selling on credit is switched off for this shop.');
-                }
-
+                'customer_id' => $data['customer_id'] ?? session('cart_customer'),
+                'on_credit' => (bool) ($data['on_credit'] ?? false),
+                'due_date' => $data['due_date'] ?? null,
                 /*
-                 * The tenders decide what was taken, what goes back as change and
-                 * what is left owing. A short payment is only allowed when the
-                 * cashier asked for it; whether there is an account to put it on
-                 * is CreditService's call, not ours - it refuses a part-paid sale
-                 * with no customer and says so in words the cashier can act on.
+                 * Read here rather than inside the service because the
+                 * table-service observer clears this key the moment the sale row
+                 * appears. The quoted `amount` in it is deliberately not passed:
+                 * the charge is recomputed from its type and value against the
+                 * bill the server has just worked out.
                  */
-                $plan = $split->plan($this->tendersFrom($data), $grandTotal, $onCredit);
-                $paid = $plan['tendered'];
-
-                // Said early so the cashier is not told after the drawer opens.
-                // recordCreditSale() checks again under a lock, where it counts.
-                if ($plan['credit'] > 0 && $customer) {
-                    $credit->assertCanTakeCredit($customer, $plan['credit']);
-                }
-
-                /*
-                 * Resolved inside the transaction on purpose: currentFor() only ever
-                 * returns an open shift, so a sale finishing just after a manager
-                 * closed the drawer is never stamped into a reconciliation that has
-                 * already been signed off.
-                 */
-                $shift = $shifts->currentFor($request->user());
-
-                if (!$shift && $shifts->requiredToSell()) {
-                    throw new DomainException('No shift is open. Open a shift before selling.');
-                }
-
-                $sale = Sale::create([
-                    'invoice_number' => 'INV-' . now()->format('YmdHis') . '-' . Str::upper(Str::random(4)),
-                    'user_id' => userId(),
-                    'customer_id' => $customer?->id,
-                    'shift_id' => $shift?->id,
-                    'total_amount' => $totals['subtotal'],
-                    'tax_amount' => $totals['tax'],
-                    'discount_amount' => $totals['discount_total'],
-                    'grand_total' => $grandTotal,
-                    // The largest tender, so every existing report and filter still works.
-                    'payment_method' => $plan['dominant'],
-                    'paid_amount' => $paid,
-                    // Clamped: a sale that is part on credit has no change to give.
-                    'change_due' => $plan['change'],
-                    'due_date' => $data['due_date'] ?? null,
-                    'sale_date' => now(),
-                    'status' => Sale::STATUS_COMPLETED,
-                    'tax_rate' => $taxRate,
-                    'discount_type' => $orderDiscount['type'] ?? null,
-                    'discount_value' => $orderDiscount['value'] ?? null,
-                    // Stored, not derived: a reprint renders from the sale row alone,
-                    // and the guest should see the charge named on the receipt.
-                    'service_charge' => $service['amount'],
-                    'service_charge_label' => $service['amount'] > 0 ? $service['label'] : null,
-                ]);
-
-                foreach ($lines as $id => $line) {
-                    $product = $products[$id];
-                    $calc = $totals['lines'][$id];
-
-                    SaleItem::create([
-                        'sale_id' => $sale->id,
-                        'product_id' => $product->id,
-                        'quantity' => $line['quantity'],
-                        'price' => $product->sale_price,
-                        // Snapshot: profit must not change when the product's cost is edited later.
-                        'cost_price' => $product->cost_price,
-                        'total' => $calc['gross'],
-                        'discount_amount' => $calc['discount_total'],
-                        'tax_amount' => $calc['tax'],
-                        'paid_total' => $calc['paid_total'],
-                    ]);
-
-                    // A service has no stock level, so there is no movement to record.
-                    if (!$product->tracksStock()) {
-                        continue;
-                    }
-
-                    // Each line adjusts *its own* product.
-                    $product->decrement('stock_quantity', $line['quantity']);
-
-                    InventoryLog::create([
-                        'product_id' => $product->id,
-                        'user_id' => userId(),
-                        'type' => 'OUT',
-                        'quantity' => $line['quantity'],
-                        'reason' => 'Sale ' . $sale->invoice_number,
-                    ]);
-                }
-
-                // One row per tender that brought money in; the drawer figures read these.
-                $split->record($sale, $plan);
-
-                /*
-                 * The only thing allowed to write balance_due and payment_status.
-                 * It caps paid_amount at the grand total (the rest is change, which
-                 * is already in change_due), so paid_amount and the sale_payments
-                 * rows always come to the same figure.
-                 */
-                $credit->recordCreditSale($sale, $paid);
-
-                AuditLog::record('Created Sale', 'sales', $sale->id);
-
-                return $sale;
-            });
+                'service_charge' => session('cart_service_charge'),
+            ], [
+                'cashier' => $request->user(),
+                // The online till stamps the cashier's open shift, if they have one.
+                'shift' => 'current',
+            ])['sale'];
         } catch (DomainException $e) {
             return back()->withInput()->with('error', $e->getMessage());
         }
@@ -822,7 +737,39 @@ class POSController extends Controller
         }
 
         // Always show the on-screen receipt too.
-        return view('pos.checkout', compact('sale', 'reprint'));
+        return view('pos.checkout', [
+            'sale' => $sale,
+            'reprint' => $reprint,
+            /*
+             * The reference the cashier wrote on the customer's slip when this
+             * sale was taken offline. Printing it next to the real invoice
+             * number is how a customer holding "OFF-A4K9" is matched to
+             * "INV-...". Only an offline sale has one, so this is null for
+             * nearly every receipt and costs a query for none of them.
+             */
+            'provisionalReference' => $sale->wasOffline() ? $this->provisionalReferenceFor($sale) : null,
+        ]);
+    }
+
+    /**
+     * The device's own reference for a sale that was queued offline.
+     *
+     * Read back out of the sync attempt rather than stored on the sale: it is
+     * the client's label for the sale, not the shop's, and `sales` already
+     * carries the id that matters (`client_uuid`). The attempt row is the audit
+     * trail of the sync, and this is one of the things it is for.
+     */
+    private function provisionalReferenceFor(Sale $sale): ?string
+    {
+        $payload = OfflineSaleAttempt::where('sale_id', $sale->id)
+            ->orderBy('id')
+            ->value('payload');
+
+        $payload = is_string($payload) ? json_decode($payload, true) : $payload;
+
+        return is_array($payload) && is_string($payload['reference'] ?? null)
+            ? $payload['reference']
+            : null;
     }
 
     private function printEscPos(Sale $sale): void
