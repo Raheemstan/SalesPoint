@@ -107,9 +107,8 @@
              * never run this is a broken image, which is why the README now
              * calls that step out.
              */
-            $logo = setting('store_logo')
-                ? asset('storage/' . setting('store_logo'))
-                : asset('logo.png');
+            $logo = app(\App\Services\MediaService::class)->url(setting('store_logo'))
+                ?? asset('logo.png');
         @endphp
 
         @if (setting('receipt_show_logo', '1') === '1')

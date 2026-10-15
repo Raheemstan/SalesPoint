@@ -7,6 +7,7 @@ use App\Models\Backup;
 use App\Models\Setting;
 use App\Models\User;
 use App\Services\BackupService;
+use App\Services\MediaService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
@@ -194,7 +195,34 @@ class SettingController extends Controller
         }
 
         if ($request->hasFile('store_logo')) {
-            Setting::set('store_logo', $request->file('store_logo')->store('logos', 'public'));
+            /*
+             * Through MediaService, like product images, rather than a bare
+             * ->store(). That gives four things this used to lack: a write
+             * failure raises instead of storing the literal `false` the public
+             * disk returns (which silently lost the logo while reporting
+             * success), the previous file is deleted instead of accumulating one
+             * orphan per upload for ever, the extension comes from the file's
+             * content rather than its name, and WebP is accepted - the product
+             * form already took it, so refusing it here was just inconsistent.
+             */
+            $media = app(MediaService::class);
+            $previous = setting('store_logo');
+
+            try {
+                $stored = $media->store($request->file('store_logo'), 'logos');
+            } catch (RuntimeException $e) {
+                return back()->withInput()->with('error', $e->getMessage());
+            }
+
+            Setting::set('store_logo', $stored);
+            $media->delete($previous);
+        }
+
+        if ($request->boolean('remove_store_logo')) {
+            // There was no way to take a logo off once one had been put on.
+            $media = app(MediaService::class);
+            $media->delete(setting('store_logo'));
+            Setting::set('store_logo', '');
         }
 
         return redirect()->route('settings.index')->with('success', 'Settings updated successfully.');
@@ -467,7 +495,8 @@ class SettingController extends Controller
     {
         $rules = [
             'store_name' => 'nullable|string|max:255',
-            'store_logo' => 'nullable|image|mimes:jpeg,png,jpg|max:5120',
+            'store_logo' => MediaService::rules(1024),
+            'remove_store_logo' => 'nullable|boolean',
             'store_address' => 'nullable|string|max:255',
             'store_phone' => 'nullable|string|max:255',
             'store_motto' => 'nullable|string|max:255',

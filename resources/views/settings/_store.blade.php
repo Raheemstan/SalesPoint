@@ -38,19 +38,35 @@
             </div>
         @endforeach
 
-        {{-- Alpine, so the chosen file is shown before it is uploaded. --}}
-        <div x-data="{ preview: '{{ setting('store_logo') ? asset('storage/' . setting('store_logo')) : '' }}' }">
+        {{-- Alpine, so the chosen file is shown before it is uploaded.
+             The starting value comes from MediaService::url(), which answers
+             null when the stored file is not on the disk - so a dangling
+             setting shows nothing rather than a broken image. --}}
+        <div x-data="{ preview: '{{ app(\App\Services\MediaService::class)->url(setting('store_logo')) ?? '' }}' }">
             <label for="store_logo" class="{{ $label }}">Logo</label>
-            <input type="file" name="store_logo" id="store_logo" accept="image/jpeg,image/png"
+            <input type="file" name="store_logo" id="store_logo" accept="image/jpeg,image/png,image/webp"
                 @change="const f = $event.target.files[0];
                          if (f) { const r = new FileReader(); r.onload = e => preview = e.target.result; r.readAsDataURL(f); }"
                 class="block w-full text-sm text-gray-600 dark:text-gray-300
                        file:mr-3 file:min-h-touch file:rounded-md file:border-0 file:bg-primary-600
                        file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white
                        hover:file:bg-primary-700" />
-            <p class="{{ $hint }}">JPG or PNG, up to 5 MB.</p>
+            <p class="{{ $hint }}">JPG, PNG or WebP, up to 1 MB. Shown on screen and printed on receipts.</p>
             <img x-show="preview" :src="preview" x-cloak alt="Logo preview"
+                 {{-- x-on:error, not @error: Blade claims @error for its own
+                      validation directive, so the Alpine shorthand would be
+                      compiled away and the handler would never exist. --}}
+                 x-on:error="preview = ''"
                  class="mt-2 h-16 w-auto rounded-md object-contain ring-1 ring-gray-200 dark:ring-gray-700">
+
+            @if (setting('store_logo'))
+                <label class="mt-2 inline-flex min-h-touch items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
+                    <input type="checkbox" name="remove_store_logo" value="1"
+                           class="rounded border-gray-300 text-primary-600 dark:border-gray-600 dark:bg-gray-900">
+                    Remove the logo and go back to the default
+                </label>
+            @endif
+
             @error('store_logo')
                 <p class="{{ $error }}">{{ $message }}</p>
             @enderror
