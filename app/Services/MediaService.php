@@ -161,7 +161,28 @@ class MediaService
          * disk at a folder inside the web root instead (see the README), and
          * only the disk's own `url` config knows where that is.
          */
-        return Storage::disk(self::DISK)->url($path);
+        $url = Storage::disk(self::DISK)->url($path);
+
+        /*
+         * ...but Storage::url() builds an ABSOLUTE url from APP_URL, while
+         * asset() resolves against the host the browser actually asked for. An
+         * install reached on a name APP_URL does not mention - a .test vhost, a
+         * LAN address, a till on 192.168.x.y - then gets every image pointed at
+         * the wrong host, and the browser shows a broken picture while the file
+         * sits perfectly well on disk.
+         *
+         * So when the url is on this app's own configured root, hand back just
+         * the path and let the browser resolve it. A url somewhere else entirely
+         * (a CDN, or that shared-host folder) is left absolute, because that is
+         * the case the disk config exists to express.
+         */
+        $root = rtrim((string) config('app.url'), '/');
+
+        if ($root !== '' && str_starts_with($url, $root)) {
+            return substr($url, strlen($root)) ?: '/';
+        }
+
+        return $url;
     }
 
     /** Is the file this path names actually on the disk? */
