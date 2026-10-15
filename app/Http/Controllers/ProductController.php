@@ -7,20 +7,25 @@ use App\Models\Category;
 use App\Models\InventoryLog;
 use App\Models\Product;
 use App\Models\Supplier;
+use App\Services\MediaService;
 use App\Services\VariantService;
 use DomainException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use RuntimeException;
+use Throwable;
 
 class ProductController extends Controller
 {
     /** Stock only means something for an item that is counted in and out. */
     private const STOCK_FIELDS = ['stock_quantity', 'alert_quantity', 'batch_no', 'expiry_date', 'reorder_quantity'];
 
-    public function index(Request $request)
+    /** Where product pictures live on the public disk. */
+    private const IMAGE_FOLDER = 'products';
+
+    public function index(Request $request, MediaService $media)
     {
         Gate::authorize('viewAny', Product::class);
 
@@ -65,71 +70,95 @@ class ProductController extends Controller
         $categories = Category::orderBy('name')->get();
         $suppliers = Supplier::active()->orderBy('name')->get();
 
-        return view('products.index', compact('products', 'categories', 'suppliers'));
+        // $media goes to the view because the list has two things to ask it: per
+        // row, whether that picture is actually on the disk, and once for the
+        // screen, whether the link that serves any of them exists at all.
+        return view('products.index', compact('products', 'categories', 'suppliers', 'media'));
     }
 
-    public function store(Request $request)
+    public function store(Request $request, MediaService $media)
     {
         Gate::authorize('create', Product::class);
 
-        $validated = $request->validate($this->rules($request));
+        $validated = $request->validate($this->rules($request), MediaService::messages());
 
         // products.sku is NOT NULL + unique, but the form lets it be left blank.
         $validated['sku'] = $validated['sku'] ?? 'SKU-' . Str::upper(Str::random(8));
 
         $attributes = $this->columns($validated, null);
+        $stored = null;
 
         if ($request->hasFile('image')) {
-            $attributes['image_path'] = $request->file('image')->store('products', 'public');
+            try {
+                $stored = $attributes['image_path'] = $media->store($request->file('image'), self::IMAGE_FOLDER);
+            } catch (RuntimeException $e) {
+                return back()->withInput()->with('error', $e->getMessage());
+            }
         }
 
-        DB::transaction(function () use ($attributes) {
-            $product = Product::create($attributes);
+        $this->keepingDiskClean($media, $stored, function () use ($attributes) {
+            DB::transaction(function () use ($attributes) {
+                $product = Product::create($attributes);
 
-            if ($product->tracksStock() && $product->stock_quantity > 0) {
-                $this->logStock($product, 'IN', $product->stock_quantity, 'Opening stock');
-            }
+                if ($product->tracksStock() && $product->stock_quantity > 0) {
+                    $this->logStock($product, 'IN', $product->stock_quantity, 'Opening stock');
+                }
+            });
         });
 
         return back()->with('success', 'Product added successfully.');
     }
 
-    public function update(Request $request, Product $product, VariantService $variants)
+    public function update(Request $request, Product $product, VariantService $variants, MediaService $media)
     {
         Gate::authorize('update', $product);
 
-        $validated = $request->validate($this->rules($request, $product));
+        $validated = $request->validate($this->rules($request, $product), MediaService::messages());
 
         // Keep the existing SKU if the field was cleared.
         $validated['sku'] = $validated['sku'] ?? $product->sku;
 
         $attributes = $this->columns($validated, $product);
         $replaced = null;
+        $stored = null;
         $previousName = $product->name;
 
         if ($request->hasFile('image')) {
-            $replaced = $product->image_path;
-            $attributes['image_path'] = $request->file('image')->store('products', 'public');
+            try {
+                $stored = $attributes['image_path'] = $media->store($request->file('image'), self::IMAGE_FOLDER);
+                $replaced = $product->image_path;
+            } catch (RuntimeException $e) {
+                return back()->withInput()->with('error', $e->getMessage());
+            }
         }
 
-        DB::transaction(function () use ($attributes, $product, $previousName, $variants) {
-            $before = $product->stock_quantity;
-            $product->update($attributes);
+        $this->keepingDiskClean($media, $stored, function () use ($attributes, $product, $previousName, $variants, $replaced) {
+            DB::transaction(function () use ($attributes, $product, $previousName, $variants, $replaced) {
+                $before = $product->stock_quantity;
+                $product->update($attributes);
 
-            // Stock edited by hand must leave a trail like every other movement.
-            if ($product->tracksStock() && $product->stock_quantity !== $before) {
-                $this->logStock($product, 'ADJUST', $product->stock_quantity - $before, 'Manual adjustment');
-            }
+                // Stock edited by hand must leave a trail like every other movement.
+                if ($product->tracksStock() && $product->stock_quantity !== $before) {
+                    $this->logStock($product, 'ADJUST', $product->stock_quantity - $before, 'Manual adjustment');
+                }
 
-            // Renaming a style renames the variants that still carry its name.
-            if ($product->hasVariants()) {
-                $variants->syncVariantNames($product, $previousName);
-            }
+                // Renaming a style renames the variants that still carry its name.
+                if ($product->hasVariants()) {
+                    $variants->syncVariantNames($product, $previousName);
+                }
+
+                // Worth a line of its own: the file it replaced is deleted for
+                // good a moment from now, and a shop that loses a photo it
+                // wanted back has nothing else to look at.
+                if ($replaced) {
+                    AuditLog::record('Replaced product image', 'products', $product->id);
+                }
+            });
         });
 
         // Only once the new path is safely saved, so a failed update never leaves
         // a product pointing at a file that has been deleted.
-        $this->deleteImage($replaced);
+        $media->delete($replaced);
 
         return back()->with('success', 'Product updated successfully.');
     }
@@ -146,15 +175,32 @@ class ProductController extends Controller
             return back()->with('error', $e->getMessage());
         }
 
-        // Soft delete: sales and purchases that reference the product keep working.
-        // The image stays with it, so restoring the row restores the picture.
+        /*
+         * Soft delete: sales and purchases that reference the product keep
+         * working. THE PICTURE IS DELIBERATELY LEFT ON THE DISK, and that is a
+         * decision rather than an oversight:
+         *
+         *  - an archived product is still in the sales history, on last
+         *    quarter's receipts and in every report that covers the period it
+         *    sold in, so its photo is still something somebody may want to see;
+         *  - the row is restorable (ProductPolicy::restore), and a restore that
+         *    brought back a product with a blank picture would be a second,
+         *    quieter kind of data loss;
+         *  - and nothing ever force-deletes a product - the policy refuses it -
+         *    so the file cannot be orphaned by one.
+         *
+         * The cost is a file per archived product in storage/app/public, which
+         * is a few hundred kilobytes a shop will never notice, against a photo
+         * that cannot be got back. Removing the picture on purpose is its own
+         * action (destroyImage), and that one does delete it.
+         */
         $product->delete();
 
         return back()->with('success', 'Product deleted successfully.');
     }
 
     /** Remove a product's picture without touching anything else about it. */
-    public function destroyImage(Product $product)
+    public function destroyImage(Product $product, MediaService $media)
     {
         Gate::authorize('update', $product);
 
@@ -164,10 +210,15 @@ class ProductController extends Controller
             return back()->with('error', 'This product has no image.');
         }
 
-        $product->update(['image_path' => null]);
-        $this->deleteImage($path);
+        DB::transaction(function () use ($product) {
+            $product->update(['image_path' => null]);
 
-        AuditLog::record('Removed product image', 'products', $product->id);
+            AuditLog::record('Removed product image', 'products', $product->id);
+        });
+
+        // After the commit: a rolled-back removal must not have deleted the file
+        // the row still points at.
+        $media->delete($path);
 
         return back()->with('success', 'Image removed.');
     }
@@ -352,10 +403,24 @@ class ProductController extends Controller
         return $attributes;
     }
 
-    private function deleteImage(?string $path): void
+    /**
+     * Run a write, and take a just-uploaded picture back off the disk if it fails.
+     *
+     * The file has to be written before the row that points at it, because an
+     * upload is not part of the transaction and cannot be rolled back with it.
+     * So when the row is not saved after all - a unique SKU lost a race, the
+     * database went away - the file would stay in storage/app/public with
+     * nothing referring to it and nothing that would ever clean it up. One of
+     * those per failed save is how a folder quietly fills a disk.
+     */
+    private function keepingDiskClean(MediaService $media, ?string $stored, callable $write): void
     {
-        if ($path) {
-            Storage::disk('public')->delete($path);
+        try {
+            $write();
+        } catch (Throwable $e) {
+            $media->delete($stored);
+
+            throw $e;
         }
     }
 
@@ -417,9 +482,9 @@ class ProductController extends Controller
             'expiry_date'    => 'nullable|date',
             'reorder_quantity' => 'nullable|integer|min:0|max:1000000',
             'is_active'      => 'nullable|boolean',
-            // Mime types are checked as well as the extension: an .png that is
-            // really a script must not be stored under the public disk.
-            'image'          => 'nullable|image|mimes:jpeg,jpg,png,webp|max:2048',
+            // What counts as a picture, and what is done with it, is one set of
+            // rules shared with the shop logo - see App\Services\MediaService.
+            'image'          => MediaService::rules(),
         ];
     }
 }

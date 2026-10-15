@@ -50,6 +50,21 @@
             </x-slot:actions>
         </x-page-header>
 
+        {{--
+            The one upload failure a shop cannot diagnose: everything saves, the
+            files are on the disk, and every picture is a 403 because nothing
+            serves storage/app/public. The web server answers those requests
+            without PHP ever seeing them, so there is nothing in the log either.
+        --}}
+        @if ($media->publicLinkMissing())
+            <div class="mb-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-900 ring-1 ring-amber-200 dark:bg-amber-900/30 dark:text-amber-100 dark:ring-amber-800">
+                <strong class="font-semibold">Pictures cannot be shown on this server.</strong>
+                Uploads are being saved, but the link that serves them
+                (<code class="font-mono text-xs">public/storage</code>) is missing, so every picture here is a
+                placeholder. Run <code class="font-mono text-xs">php artisan storage:link</code> on the server.
+            </div>
+        @endif
+
         {{-- Search --}}
         <x-card class="mb-4">
             <form method="GET" action="{{ route('products.index') }}" class="flex flex-wrap items-center gap-2">
@@ -97,6 +112,11 @@
                         // With the grouping off there is nothing to fold away.
                         $variantCount = $variantsOn ? (int) $product->variants_count : 0;
 
+                        // Null when the row names a file that is not on the disk
+                        // (a restored database, a half-copied deploy), so the
+                        // placeholder below is used instead of a torn image.
+                        $imageUrl = $media->url($product->image_path);
+
                         // Only the fields this form uses, with the date in the shape
                         // an <input type="date"> accepts rather than a full timestamp.
                         $row = [
@@ -123,6 +143,10 @@
                             'expiry_date' => $product->expiry_date?->toDateString(),
                             'reorder_quantity' => (int) $product->reorder_quantity,
                             'image_path' => $product->image_path,
+                            // The edit form needs both: the URL to show the
+                            // picture, and the path to know there is one to
+                            // remove even when the file itself has gone.
+                            'image_url' => $imageUrl,
                         ];
 
                         $expiring = $product->expiry_date
@@ -133,15 +157,25 @@
                     <tr>
                         <td>
                             <div class="flex items-center gap-3">
-                                @if ($product->image_path)
-                                    <img src="{{ asset('storage/' . $product->image_path) }}" alt=""
-                                         class="h-10 w-10 shrink-0 rounded-lg object-cover ring-1 ring-gray-200 dark:ring-gray-600">
-                                @else
-                                    <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-gray-100 text-gray-400 dark:bg-gray-700 dark:text-gray-500"
-                                          aria-hidden="true">
-                                        <x-icon name="box" size="5" />
-                                    </span>
-                                @endif
+                                {{--
+                                    The placeholder is always rendered, with the
+                                    picture laid over it. So a file that is on the
+                                    disk but cannot be fetched - a missing
+                                    public/storage link gives 403, a stale browser
+                                    cache gives 404 - removes itself on error and
+                                    uncovers the box icon, instead of leaving a
+                                    broken-image icon in the middle of the table.
+                                --}}
+                                <span class="relative flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-gray-100 text-gray-400 ring-1 ring-gray-200 dark:bg-gray-700 dark:text-gray-500 dark:ring-gray-600"
+                                      aria-hidden="true">
+                                    <x-icon name="box" size="5" />
+
+                                    @if ($imageUrl)
+                                        <img src="{{ $imageUrl }}" alt="" loading="lazy"
+                                             onerror="this.remove()"
+                                             class="absolute inset-0 h-full w-full object-cover">
+                                    @endif
+                                </span>
 
                                 <div class="min-w-0">
                                     <div class="flex flex-wrap items-center gap-1.5">

@@ -313,8 +313,24 @@
                 {{-- What is already saved, until a new file replaces it on screen. --}}
                 <template x-if="!preview && {{ $p }}image_path">
                     <div class="flex items-start gap-2">
-                        <img :src="'{{ asset('storage') }}/' + {{ $p }}image_path" alt=""
-                             class="h-20 w-20 rounded-lg object-cover ring-1 ring-gray-300 dark:ring-gray-600">
+                        {{--
+                            image_url is null when the row names a file that is
+                            not on the disk. Saying so is more use than a broken
+                            image, and the condition stays on image_path so the
+                            Remove button is still reachable - clearing the
+                            dangling name is exactly what you want to do next.
+                        --}}
+                        <template x-if="{{ $p }}image_url">
+                            <img :src="{{ $p }}image_url" alt="" onerror="this.remove()"
+                                 class="h-20 w-20 rounded-lg object-cover ring-1 ring-gray-300 dark:ring-gray-600">
+                        </template>
+
+                        <template x-if="!{{ $p }}image_url">
+                            <p class="max-w-xs text-xs text-amber-700 dark:text-amber-300">
+                                The saved picture is no longer on the server. Choose a new file, or remove it.
+                            </p>
+                        </template>
+
                         {{--
                             Removing the picture is its own request, and HTML forbids
                             nesting forms, so this button drives the form that sits
