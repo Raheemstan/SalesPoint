@@ -6,13 +6,22 @@ use App\Models\AuditLog;
 use App\Models\Expense;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
 
+/**
+ * The routes are behind `role:admin|manager`, and every action also asks
+ * ExpensePolicy. The duplication is deliberate: the middleware guards the URL,
+ * the policy guards the action, so a future route added outside that group
+ * cannot quietly let a cashier sign money out of the business.
+ */
 class ExpenseController extends Controller
 {
     // List expenses with filtering and search
     public function index(Request $request)
     {
+        Gate::authorize('viewAny', Expense::class);
+
         $query = Expense::query();
 
         if ($request->filled('search')) {
@@ -53,6 +62,8 @@ class ExpenseController extends Controller
     // Store new expense
     public function store(Request $request)
     {
+        Gate::authorize('create', Expense::class);
+
         $validated = $request->validate($this->rules());
 
         try {
@@ -72,6 +83,8 @@ class ExpenseController extends Controller
     // Update existing expense
     public function update(Request $request, Expense $expense)
     {
+        Gate::authorize('update', $expense);
+
         $validated = $request->validate($this->rules());
 
         try {
@@ -101,6 +114,8 @@ class ExpenseController extends Controller
     // Delete expense
     public function destroy(Expense $expense)
     {
+        Gate::authorize('delete', $expense);
+
         try {
             DB::transaction(function () use ($expense) {
                 Log::info('Expense deleted', [

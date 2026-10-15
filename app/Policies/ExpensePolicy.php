@@ -4,61 +4,59 @@ namespace App\Policies;
 
 use App\Models\Expense;
 use App\Models\User;
-use Illuminate\Auth\Access\Response;
 
+/**
+ * An expense is money leaving the business, and it lands directly in the
+ * profit-and-loss report. Recording or editing one is a back-office job: a
+ * cashier takes money in, never signs it out.
+ *
+ * This class was a `make:policy` stub that returned false from all seven
+ * methods. Nothing called it, so nothing failed - it would have denied
+ * everybody the moment someone wired the first Gate::authorize in. The routes
+ * are already behind `role:admin|manager`; this is the second lock.
+ */
 class ExpensePolicy
 {
-    /**
-     * Determine whether the user can view any models.
-     */
+    private function isManager(User $user): bool
+    {
+        return $user->hasAnyRole(['admin', 'manager']);
+    }
+
     public function viewAny(User $user): bool
     {
-        return false;
+        return $this->isManager($user);
     }
 
-    /**
-     * Determine whether the user can view the model.
-     */
     public function view(User $user, Expense $expense): bool
     {
-        return false;
+        return $this->isManager($user);
     }
 
-    /**
-     * Determine whether the user can create models.
-     */
     public function create(User $user): bool
     {
-        return false;
+        return $this->isManager($user);
     }
 
     /**
-     * Determine whether the user can update the model.
+     * Not restricted to whoever recorded it: a manager correcting last week's
+     * fuel entry is routine, and the audit log already carries who changed it.
      */
     public function update(User $user, Expense $expense): bool
     {
-        return false;
+        return $this->isManager($user);
     }
 
-    /**
-     * Determine whether the user can delete the model.
-     */
     public function delete(User $user, Expense $expense): bool
     {
-        return false;
+        return $this->isManager($user);
     }
 
-    /**
-     * Determine whether the user can restore the model.
-     */
     public function restore(User $user, Expense $expense): bool
     {
-        return false;
+        return $this->isManager($user);
     }
 
-    /**
-     * Determine whether the user can permanently delete the model.
-     */
+    /** Nobody: the profit figure for a past period must stay reproducible. */
     public function forceDelete(User $user, Expense $expense): bool
     {
         return false;
