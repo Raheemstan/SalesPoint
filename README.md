@@ -51,7 +51,28 @@ web root. `php artisan storage:link` creates the `public/storage` symlink that m
 **Without it, every uploaded image is a broken image or a 403**, with nothing in the logs to explain why, because
 the request never reaches PHP at all. Re-run it after any deploy that recreates `public/`, and note that some
 shared hosts disallow symlinks — there you must point the `public` disk at a directory inside the web root
-instead.
+instead (the app reads the disk's configured URL, so that works end to end).
+
+`storage:link` does **not** create its target. A `git clone` gets `storage/app/public` because that directory's
+`.gitignore` is tracked, but a zip or an `rsync` that skips empty files does not — and a dangling symlink 404s
+silently. Create it before linking if you deploy that way:
+
+```bash
+mkdir -p storage/app/public
+php artisan storage:link
+```
+
+### Uploads and PHP limits
+
+Images are capped at **2 MB** and **8000 px** on either side, and must be JPEG, PNG or WebP. The shop logo is
+capped at 1 MB. SVG is refused deliberately: it can carry script.
+
+PHP's own limits sit in front of all of this. `upload_max_filesize` and `post_max_size` must be at least ~4 MB
+or a phone photo is rejected before Laravel ever sees it — which surfaces as an unstyled 413, not a validation
+message.
+
+**Archived products keep their image files**, because the product still appears on past receipts and in reports
+for the period it sold in. So `storage/app/public/products` is part of what you back up, not scratch space.
 
 ### The first admin
 
