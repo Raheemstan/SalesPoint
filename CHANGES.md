@@ -156,6 +156,127 @@ to the kitchen in batches, and only becomes money at the end.
 - A printer test only passed on non-Windows hosts; `printEscPos()` now logs the attempt before branching on the OS.
 - `README.md` was still the stock Laravel boilerplate; it is now install and deployment notes.
 
+## The till, finished
+
+- **Barcode scanning as the primary way in.** Focus stays in the search box, Enter adds the exact barcode (then
+  SKU) match in one step, a tone confirms it and a different tone rejects an unknown code. Scanning the same code
+  again increments the line rather than adding a second one.
+- **Held carts**: park a sale with a note, serve somebody else, resume it later. Parking reserves no stock, so a
+  resumed cart re-checks availability and prices and says what has changed.
+- **Split payments**: one sale, several tenders. Change comes out of the cash portion only — you cannot give
+  change from a card — and `sales.payment_method` keeps the largest tender so existing filters and reports still
+  mean something. A tender row records money *kept*, not money handed over, so the rows and `paid_amount` always
+  agree and a shift reconciles exactly.
+- **Credit at the till**: attach a customer, take part payment, set a due date, with the credit limit checked
+  before the sale and again under a lock.
+- Fixed along the way: `LIKE` searches escaped `%` and `_` but never declared an `ESCAPE` clause, so on SQLite a
+  search containing either found **nothing** instead of finding the literal character.
+
+## Dashboard and reports
+
+- **A role-aware dashboard.** A cashier sees their own takings, their shift and their recent sales — never
+  margins or whole-shop profit. A manager gets takings, transactions, average basket, gross profit, cash in
+  drawer, money owed, low stock and expiring items, a sales trend against the previous period, today by payment
+  method, top sellers by quantity and by profit, and a reorder list. Every tile links to the report that explains
+  it, and the whole thing renders on a brand-new install with no data.
+- **Seven new reports**: by cashier (the staff-performance and discount view), by category, by product (margin by
+  product, which the cost snapshot made possible), inventory valuation, receivables aged into buckets, payables,
+  and expiry. All with CSV export.
+- Charts repaint when the theme changes and degrade silently if the bundled Chart.js is missing, so an unbuilt
+  page never throws. Every chart is accompanied by the same figures as text.
+- `reports/sales_pdf` extended the app layout, so DomPDF was being handed the sidebar, the theme switcher and a
+  `@vite` tag it cannot fetch. It is now a standalone print document.
+
+## Selling with no internet
+
+Power and network cuts are routine in the markets this app is sold into, so the till queues sales locally and
+replays them when the connection returns.
+
+- **One place creates a sale.** The sale-creation core came out of the till into `App\Services\CheckoutService`,
+  used by both the live checkout and the replay endpoint. Two implementations of "create a sale" would drift and
+  one of them would be wrong about money.
+- **A queued sale is a record of intent, never of value.** Every price, total and tax is recomputed on arrival; a
+  client-supplied total is ignored.
+- **Replaying can never bank a sale twice.** Each sale carries a client-generated id with a unique index, and a
+  replay is answered as a duplicate with the original sale's number.
+- The default is **bank it and make the discrepancy visible**: the goods are gone and the money is in the drawer.
+  A sale whose stock has since sold out is taken and stock goes negative with an inventory log, so a stock-take
+  finds it. A price change is honoured at the price the customer agreed, bounded by a tolerance so a tampered
+  queue cannot claim a 10,000 item sold for 1. But an over-limit credit sale and an over-cap discount are
+  **refused** — those create a debt that may never be collected and bypass a control that would otherwise be
+  worthless the moment someone pulled the network cable.
+- The customer gets a provisional slip with a reference, reconciled to the real invoice number on sync and
+  printed on the real receipt, so a returning customer can be matched by either number.
+
+## More than one shop
+
+Branch-scoped stock, staff and takings, with transfers between branches, all behind `feature('branches')` and
+inert for a single-site shop.
+
+- **One shared catalogue, stock split per branch.** A branch is a place, not a different business: the same tin
+  has the same barcode and price in both shops, and a customer owes the business rather than a building. Stock
+  lives in `branch_stock`, tied by the invariant `products.stock_quantity == SUM(branch_stock)` — with one branch
+  those are the same number, which is why the till, stock-takes, the reorder list and every report needed no
+  changes.
+- Scoping is a **global Eloquent scope**, not a `where` clause repeated through dozens of controllers, because
+  that approach always misses one — and a missed query in a POS means one shop selling another shop's stock.
+  The six places that deliberately escape it are listed and commented.
+- **Transfers** leave the source on dispatch and arrive on receipt, so stock in transit is counted in neither
+  place rather than both. Receiving twice and over-sending are both refused.
+- Fixed: the till checked availability against the group-wide total, so a branch could oversell into negative
+  while another shop's shelf sat full.
+
+## Variants and serial numbers
+
+- **A variant is a product with a parent.** It therefore already has its own SKU, barcode, cost, price and stock
+  level, and the till, stock-takes, reorder, purchases and every report work on it unchanged. A parent becomes a
+  grouping row that is never sold. A bulk generator turns two axes (sizes × colours) into the missing
+  combinations.
+- **Serial / IMEI capture** per unit sold, with a post-sale entry screen and a lookup that answers "which sale
+  did this serial go out on?" — the question that makes recording them worthwhile.
+
+## Offsite backup
+
+- The nightly dump is gzipped, **encrypted with AES-256 in a stream**, and uploaded to any S3-compatible store
+  (AWS, Backblaze B2, Cloudflare R2, Wasabi, DigitalOcean Spaces, or a MinIO box in the back office).
+- Chosen over emailing the dump deliberately: email has a hard attachment ceiling that a growing database crosses
+  **silently**, which is the worst failure a backup can have. Email is kept as a report, attaching the file only
+  when it is small and encrypted.
+- Encrypt-then-MAC, verified in its own pass before a byte is written, so a wrong key or a truncated download
+  refuses instead of producing plausible garbage. **The format is documented and restorable with `openssl` alone**
+  — a backup you can only restore with the app that made it is not a backup.
+- A failed upload never makes the local backup look failed, and a local copy is never pruned while its offsite
+  copy is still owed.
+
+## Security and robustness fixes found by review
+
+- **A manager saving the shop's phone number switched off backups and encryption.** Checkbox settings were written
+  on every save — an unchecked box is indistinguishable from one that was never rendered — and the Backup tab
+  renders for admins only. Backups stopped, or started leaving the building unencrypted, and nothing said so
+  because the screen that would report it is the one a manager cannot see. Backup, audit-log and 2FA settings are
+  now admin-only: a role must not be able to edit its own constraints.
+- **The till's product search returned every column to any cashier**, including `cost_price`, `supplier_id` and
+  reorder levels — contradicting two policies that say in their own docblocks that a cashier must never see a
+  cost. Both the search and scan paths now use one explicit column whitelist.
+- **`CategoryPolicy` and `ExpensePolicy` were stubs denying everything**, and their controllers asked no policy at
+  all. Both implemented and now enforced, with tests that fail if a `Gate::authorize` call is ever removed.
+- **Uploads**: a failed write stored the literal `false` while reporting success; replaced images and logos were
+  never deleted and accumulated for ever; a dimension limit was missing, so a 30000×30000 image passed the size
+  cap; and a product whose file had gone rendered a broken-image icon. All fixed, with a shared `MediaService`.
+- **The receipt printed a hardcoded placeholder logo**, so a shop could upload its logo, see it in Settings, and
+  still print somebody else's mark on every sale.
+- `storage/app/public` is created on first upload, and a missing `public/storage` symlink now shows the deployer
+  a banner instead of failing invisibly — the web server answers those requests without PHP, so nothing reaches
+  the log.
+- `sales.created_at` and `inventory_logs.created_at` were unindexed while every table added later indexed it.
+
+## Tests
+
+The suite went from 159 to **1100**. Two of them exist specifically to catch the class of bug that a green suite
+misses: `EmptyInstallTest` loads all 44 screens for all three roles on an empty database, asserting 200-or-403 and
+no PHP notice in the body; and `UiConsistencyTest` compiles every Blade template, which catches a component tag
+that silently fails to compile and makes a form field disappear while the page still returns 200.
+
 ---
 
 # Batch 2: new features (cost snapshot, till discounts and tax, sales history, refunds and voids)
