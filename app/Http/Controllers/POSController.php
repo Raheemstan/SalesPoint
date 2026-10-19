@@ -27,6 +27,9 @@ class POSController extends Controller
 {
     private const PAYMENT_METHODS = ['cash', 'pos', 'transfer'];
 
+    /** How many products the till page carries; beyond this the search box asks the server. */
+    private const CATALOGUE_LIMIT = 200;
+
     /**
      * The character that makes `%` and `_` literal in a LIKE pattern.
      *
@@ -43,40 +46,68 @@ class POSController extends Controller
      */
     public function index()
     {
-        [$cart, $totals] = $this->resolveCart();
-        $discountLimit = $this->cashierDiscountLimit();
-        $orderDiscount = session('cart_discount');
-        $serviceCharge = $this->serviceChargeFor($totals['grand_total'] ?? 0.0);
-        $till = $this->tillState();
-
         if (request()->ajax()) {
-            return view('pos.cart', array_merge($till, compact(
-                'cart', 'totals', 'orderDiscount', 'discountLimit', 'serviceCharge'
-            )))->render();
+            return $this->renderCart();
         }
 
-        // The search box covers the rest of the catalogue.
-        $products = Product::orderBy('name')->limit(200)->get();
+        $cartData = $this->cartViewData();
 
-        return view('pos.index', array_merge($till, $this->offlineState(), compact(
-            'products', 'cart', 'totals', 'orderDiscount', 'discountLimit', 'serviceCharge'
-        )));
+        // The search box covers the rest of the catalogue.
+        $limit = self::CATALOGUE_LIMIT;
+        $products = Product::orderBy('name')->limit($limit)->get();
+
+        return view('pos.index', array_merge($cartData, $this->offlineState(), [
+            'products' => $products,
+            // When the whole catalogue fits on screen the till can filter it in the
+            // browser, with no request at all. Past the limit it asks the server.
+            'catalogueComplete' => $products->count() < $limit,
+        ]));
     }
 
     /**
-     * What the till needs in order to hold sales when the line drops, and to
-     * show the ones it is already holding.
-     *
-     * Only on the full page, not on the AJAX cart partial: the panel is rendered
-     * once and keeps its own state, and re-rendering it under the cashier every
-     * time they scan something would close it mid-read.
-     *
-     * The refused list comes from the server rather than from the device, so a
-     * refusal is visible even with JavaScript broken, on a till that has never
-     * held a sale, and after the device that took it has been wiped.
+     * Everything pos.cart needs: the cart and its totals, discounts, service charge
+     * and the till state around it (customer, shift, payment methods).
      *
      * @return array<string, mixed>
      */
+    private function cartViewData(): array
+    {
+        [$cart, $totals] = $this->resolveCart();
+        $orderDiscount = session('cart_discount');
+
+        return array_merge($this->tillState(), [
+            'cart' => $cart,
+            'totals' => $totals,
+            'orderDiscount' => $orderDiscount,
+            'discountLimit' => $this->cashierDiscountLimit(),
+            'serviceCharge' => $this->serviceChargeFor($totals['grand_total'] ?? 0.0),
+        ]);
+    }
+
+    /** The cart panel as HTML: the AJAX answer to GET /pos, and what the mutations return. */
+    private function renderCart(): string
+    {
+        return view('pos.cart', $this->cartViewData())->render();
+    }
+
+    /**
+     * A JSON answer for a cart action, with the re-rendered cart panel attached when the till
+     * asks for it (X-Till-Render).
+     *
+     * The till used to do POST, wait, then GET the panel: two sequential round trips for every
+     * tap. Rendering the panel into the same response halves the waiting, and because it is
+     * rendered *after* the change (and after any refusal has rolled the cart back) it always
+     * shows what the server really holds.
+     */
+    private function withCartHtml(array $payload, int $status = 200)
+    {
+        if (request()->hasHeader('X-Till-Render')) {
+            $payload['html'] = $this->renderCart();
+        }
+
+        return response()->json($payload, $status);
+    }
+
     private function offlineState(): array
     {
         $status = app(OfflineSyncService::class)->summaryFor(auth()->user());
@@ -318,10 +349,10 @@ class POSController extends Controller
             session()->put('cart', $before[0]);
             $before[1] === null ? session()->forget('cart_discount') : session()->put('cart_discount', $before[1]);
 
-            return response()->json(['success' => false, 'message' => $e->getMessage(), 'cart' => session('cart', [])], 422);
+            return $this->withCartHtml(['success' => false, 'message' => $e->getMessage(), 'cart' => session('cart', [])], 422);
         }
 
-        return response()->json(['success' => true, 'cart' => session('cart', [])]);
+        return $this->withCartHtml(['success' => true, 'cart' => session('cart', [])]);
     }
 
     /** Discount on one cart line (percent or fixed). */
@@ -465,7 +496,7 @@ class POSController extends Controller
 
         [$added, $message] = $this->addOneToCart($product);
 
-        return response()->json([
+        return $this->withCartHtml([
             'success' => $added,
             'found' => true,
             'message' => $message,
@@ -484,7 +515,7 @@ class POSController extends Controller
 
         [$added, $message] = $this->addOneToCart($product);
 
-        return response()->json(array_filter([
+        return $this->withCartHtml(array_filter([
             'success' => $added,
             'message' => $message,
             'cart' => session()->get('cart', []),
@@ -561,7 +592,7 @@ class POSController extends Controller
             session()->put('cart', $cart);
         }
 
-        return response()->json(['success' => true, 'cart' => $cart]);
+        return $this->withCartHtml(['success' => true, 'cart' => $cart]);
     }
 
     /**
@@ -579,18 +610,18 @@ class POSController extends Controller
                 unset($cart[$id]);
                 session()->put('cart', $cart);
 
-                return response()->json(['success' => false, 'message' => 'Product no longer exists.', 'cart' => $cart], 422);
+                return $this->withCartHtml(['success' => false, 'message' => 'Product no longer exists.', 'cart' => $cart], 422);
             }
 
             if ($refusal = $this->stockRefusal($product, $quantity)) {
-                return response()->json(['success' => false, 'message' => $refusal, 'cart' => $cart], 422);
+                return $this->withCartHtml(['success' => false, 'message' => $refusal, 'cart' => $cart], 422);
             }
 
             $cart[$id]['quantity'] = $quantity;
             session()->put('cart', $cart);
         }
 
-        return response()->json(['success' => true, 'cart' => $cart]);
+        return $this->withCartHtml(['success' => true, 'cart' => $cart]);
     }
 
     /**
@@ -609,13 +640,13 @@ class POSController extends Controller
         if (empty($data['customer_id'])) {
             session()->forget('cart_customer');
 
-            return response()->json(['success' => true, 'customer' => null]);
+            return $this->withCartHtml(['success' => true, 'customer' => null]);
         }
 
         $customer = Customer::findOrFail($data['customer_id']);
 
         if (!$customer->is_active) {
-            return response()->json([
+            return $this->withCartHtml([
                 'success' => false,
                 'message' => $customer->name . ' is not active and cannot be billed.',
             ], 422);
@@ -623,7 +654,7 @@ class POSController extends Controller
 
         session()->put('cart_customer', $customer->id);
 
-        return response()->json([
+        return $this->withCartHtml([
             'success' => true,
             'customer' => [
                 'id' => $customer->id,
@@ -643,7 +674,7 @@ class POSController extends Controller
     public function clearCart()
     {
         session()->forget(['cart', 'cart_discount', 'cart_customer', 'cart_service_charge']);
-        return response()->json(['success' => true]);
+        return $this->withCartHtml(['success' => true]);
     }
 
     /**

@@ -1,0 +1,9 @@
+{
+  "name": "till-e2e",
+  "private": true,
+  "type": "module",
+  "description": "Browser tests for the point-of-sale screen. Run with ./run.sh",
+  "scripts": { "test": "./run.sh" },
+  "dependencies": { "puppeteer-core": "^25.0.0" },
+  "optionalDependencies": { "@sparticuz/chromium": "^153.0.0" }
+}

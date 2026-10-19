@@ -5,7 +5,7 @@ Run `php artisan migrate` after pulling (see each section for what the migration
 **Batch 3 also needs `npm install && npm run build`** — assets are no longer loaded from a CDN, so without a build the
 app renders unstyled. See README.md.
 
-# Batch 3: running a real shop
+## Batch 3: running a real shop
 
 Ten migrations, `2026_10_14_000000` to `2026_10_14_000009`. Every one backfills existing rows so history does not
 change meaning, and every `down()` is tested.
@@ -270,22 +270,16 @@ inert for a single-site shop.
   the log.
 - `sales.created_at` and `inventory_logs.created_at` were unindexed while every table added later indexed it.
 
-## Tests
-
-The suite went from 159 to **1100**. Two of them exist specifically to catch the class of bug that a green suite
-misses: `EmptyInstallTest` loads all 44 screens for all three roles on an empty database, asserting 200-or-403 and
-no PHP notice in the body; and `UiConsistencyTest` compiles every Blade template, which catches a component tag
-that silently fails to compile and makes a form field disappear while the page still returns 200.
-
 ---
 
-# Batch 2: new features (cost snapshot, till discounts and tax, sales history, refunds and voids)
+## Batch 2: new features (cost snapshot, till discounts and tax, sales history, refunds and voids)
 
 Migrations: `2026_10_13_000001_add_costs_discounts_and_refunds` adds the new columns/tables and **backfills existing sales**
 (cost = the product's *current* cost, since the true historic cost was never stored; discount/tax shares are split across lines so
 they still add up to each sale's total). `down()` is tested.
 
 ## Cost snapshot and real profit
+
 - Every sale item now stores the product's cost at the moment of sale (`sale_items.cost_price`).
 - **Profit & Loss is now revenue - cost of goods sold - expenses.** Previously it subtracted *stock purchases* from sales, which
   overstates losses while you are stocking up and overstates profit when you sell old stock.
@@ -293,6 +287,7 @@ they still add up to each sale's total). `down()` is tested.
 - Editing a product's cost later no longer changes past profit.
 
 ## Discounts and tax at the till
+
 - Line discounts and whole-sale discounts, each as a percent or a fixed amount, from the cart.
 - Sales tax / VAT rate in **Settings > Sales** (added on top of prices, charged after discounts; 0 = off).
 - **Cashier discount limit** (Settings > Sales, default 10% of the sale, line + sale discounts together). Managers/admins are unlimited.
@@ -302,6 +297,7 @@ they still add up to each sale's total). `down()` is tested.
 - Each line stores its share of the discount and tax, so line totals always add up to the sale total to the penny.
 
 ## Sales history, refunds, voids
+
 - **Sales** page (all roles): managers see all sales with filters (date, cashier, status, payment, invoice); cashiers see only their own sales from today.
 - **Sale detail** page with receipt reprint (does not re-fire the thermal printer).
 - **Refunds** (manager/admin): pick quantities per line, choose whether goods go back to stock, give a reason and how the money was returned.
@@ -313,11 +309,12 @@ they still add up to each sale's total). `down()` is tested.
 
 ---
 
-# Batch 1: bug fixes
+## Batch 1: bug fixes
 
 Run `php artisan migrate` after pulling: two new migrations (product soft-deletes, Spatie role backfill).
 
 ## Critical
+
 - **Checkout decremented the wrong product.** `$product` leaked from the validation loop, so every cart line reduced the last product's stock. Each line now locks and updates its own product, inside one transaction.
 - **Route protection did nothing.** `->middleware()` was chained after `->group()`, and the Spatie `role` alias was never registered. Middleware is now applied correctly and aliased in `bootstrap/app.php`. Cashier = POS only; manager = stock/reports/expenses/settings; admin = users, backup, raw export.
 - **Public self-registration** gave anyone a login. Removed; admins create users in Settings.
@@ -325,6 +322,7 @@ Run `php artisan migrate` after pulling: two new migrations (product soft-delete
 - **Users CSV export included password hashes.** Column-whitelisted; admin-only.
 
 ## High
+
 - Checkout trusted client money values and session prices: now validated, priced from the DB, discount capped, payment method whitelisted, unique invoice numbers.
 - Purchase delete used a non-existent `stock` column and a broken audit insert (always failed). Fixed; refuses if the stock was already sold.
 - Purchase validation errors were swallowed by a catch-all; filters used mismatched field names; product list cached for 1h.
@@ -334,7 +332,67 @@ Run `php artisan migrate` after pulling: two new migrations (product soft-delete
 - Backup used `env()` (null when config is cached), unescaped shell input, and put the DB password on the command line; now uses `config()` + Symfony Process, supports SQLite.
 
 ## Medium / low
+
 - XSS in POS live search; stock errors on add-to-cart were silent; receipt/ESC-POS respect the Print Method setting and are Windows-guarded.
 - Manual stock edits and opening stock now write inventory logs. Audit-log toggle, low-stock warning and auto-logout settings now actually work.
 - Removed dead routes (supplier/purchase edit stubs), duplicate `searchProduct`, nonexistent `manifest.json` link, User-Agent dark-mode hack.
 - Seeder is idempotent and assigns the admin role; admin credentials come from `SEED_ADMIN_*`.
+
+## Till screen: independent scrolling, keyboard flow and speed
+
+Run `npm run build` after pulling (the till's script moved from an inline block into `resources/js/pos/`). No migration.
+
+## What changed on /pos
+
+- **Two panes that scroll on their own** (large screens). The page fills the app shell and the products and the sale each
+  scroll inside it, so scrolling a long product list no longer moves the sale and a long sale no longer pushes the catalogue
+  away. The search box stays put above the product grid. On a tablet or phone the panes stack, with the product list capped
+  at 55% of the screen height so the sale is never pages away.
+- **Quantity focus.** Picking a product focuses that line's quantity box with the number selected; type a number and press
+  **Enter** and the cursor is back in the search box. **Escape** undoes the edit. Tabbing or tapping away also sends it.
+- **A scanner is not a typist.** A barcode that arrives in a burst (or is pasted) keeps the cursor in the search box so the
+  next scan is not typed into a quantity box; a code or name typed by hand goes to the quantity. Timing, not a setting.
+- **Keyboard selection.** Arrow keys move through the search results; Enter adds the highlighted one. If typing narrowed
+  the grid to one product, Enter adds it.
+
+## Speed (measured in a real browser at 80 ms network latency)
+
+| | before | after |
+| --- | --- | --- |
+| tap a product -> line on screen | 342 ms | ~10 ms |
+| type a quantity -> line total and grand total | ~340 ms | ~1 ms |
+| requests per tap | 2 (POST, then GET the panel) | 1 |
+| six quick "+" taps | 6 round trips | 2 |
+| search | a request per pause | none, when the catalogue fits on the page |
+
+How: (1) every cart action returns the redrawn cart panel in the same answer (`X-Till-Render`), so no second request;
+(2) the browser works out the line total and the sale totals itself (`resources/js/pos/calc.js`, a port of `SaleCalculator`)
+and shows them at once, and a new line appears from the real line markup cloned from a `<template>`; (3) requests go through a
+small ordered queue that sends one at a time, collapses repeated quantity edits, and draws only the last answer.
+
+**The server is still the authority.** Every change is posted and the server's own panel replaces whatever the browser showed;
+if a request fails the screen is restored to what the server holds. `tests/Feature/TillJsParityTest.php` feeds the PHP and JS
+calculators the same random carts (including half-cent prices) and fails if they ever disagree.
+
+## Behaviour worth knowing
+
+- Charging waits for any quantity still on its way, so a sale is never charged for an older cart.
+- A cash amount the cashier has typed is kept when the cart changes; the payment box only follows the total while it is
+  still showing the total.
+- `GET /pos` for AJAX and the cart actions share one renderer, so they cannot drift apart.
+- Product cards carry `data-*` attributes (name, price, stock, sku, barcode) used for instant search and instant add.
+
+---
+
+## Tests
+
+The suite went from 159 to **1100**. Two of them exist specifically to catch the class of bug that a green suite
+misses: `EmptyInstallTest` loads all 44 screens for all three roles on an empty database, asserting 200-or-403 and
+no PHP notice in the body; and `UiConsistencyTest` compiles every Blade template, which catches a component tag
+that silently fails to compile and makes a form field disappear while the page still returns 200.
+
+- `tests/Feature/TillSpeedTest.php`, `TillJsParityTest.php` (server side of the above).
+- `tests/e2e/` - 46 checks in a real Chrome (layout, focus, timing, failures, charging). `tests/e2e/run.sh`; see its README.
+  It uses its own throwaway SQLite database and refuses to run against anything but localhost.
+
+---

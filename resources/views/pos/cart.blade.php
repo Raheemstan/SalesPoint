@@ -214,88 +214,11 @@
 </div>
 
 {{-- Cart lines --}}
-<div class="mt-3 space-y-2">
+<div class="mt-3 space-y-2" data-cart-lines>
     @forelse($cart as $item)
-        @php
-            $calc = $item['calc'];
-            // False for a service: it has no stock level, so no figure and no warning.
-            $tracksStock = $item['tracks_stock'] ?? true;
-            $short = $tracksStock && $item['quantity'] > $item['stock'];
-            $discounted = $calc['line_discount'] > 0;
-        @endphp
-
-        <div class="rounded-lg border border-gray-200 p-2.5 dark:border-gray-700"
-             x-data="{ showDiscount: {{ $discounted ? 'true' : 'false' }} }">
-            <div class="flex items-start justify-between gap-2">
-                <div class="min-w-0">
-                    <p class="font-semibold leading-snug text-gray-900 dark:text-gray-100">{{ $item['name'] }}</p>
-                    <p class="text-xs text-gray-500 dark:text-gray-400">
-                        {{ money($item['price']) }} each
-                        @if ($discounted)
-                            · <span class="font-medium text-green-600 dark:text-green-400">
-                                less {{ money($calc['line_discount']) }}
-                            </span>
-                        @endif
-                    </p>
-                    @if ($short)
-                        <p class="mt-0.5 text-xs font-medium text-red-600 dark:text-red-400">
-                            Only {{ $item['stock'] }} in stock
-                        </p>
-                    @endif
-                </div>
-
-                <div class="shrink-0 text-right">
-                    <p class="font-bold text-gray-900 dark:text-gray-100">{{ money($calc['paid_total']) }}</p>
-                    <form data-id="{{ $item['product_id'] }}" class="remove-cart-form">
-                        <button type="submit"
-                                class="flex min-h-touch items-center justify-end gap-1 text-xs text-red-600 hover:underline dark:text-red-400">
-                            <x-icon name="x" size="3" /> Remove
-                        </button>
-                    </form>
-                </div>
-            </div>
-
-            {{-- Quantity: a stepper, because "one more" is the commonest edit and a keypad is slower. --}}
-            <div class="mt-2 flex items-center gap-2">
-                <form data-id="{{ $item['product_id'] }}" class="update-cart-form flex items-center gap-1.5">
-                    <button type="button" data-step="-1" aria-label="One less"
-                            class="flex h-touch w-touch items-center justify-center rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600">
-                        <x-icon name="minus" size="4" />
-                    </button>
-                    <input type="number" name="quantity" value="{{ $item['quantity'] }}" min="1" inputmode="numeric"
-                           aria-label="Quantity for {{ $item['name'] }}"
-                           class="h-touch w-16 rounded-lg border border-gray-300 bg-white text-center text-base dark:border-gray-600 dark:bg-gray-700 dark:text-white">
-                    <button type="button" data-step="1" aria-label="One more"
-                            class="flex h-touch w-touch items-center justify-center rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600">
-                        <x-icon name="plus" size="4" />
-                    </button>
-                </form>
-
-                <button type="button" @click="showDiscount = !showDiscount"
-                        class="ml-auto flex min-h-touch items-center gap-1 rounded-lg px-2 text-xs font-medium
-                               {{ $discounted ? 'text-green-700 dark:text-green-400' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400' }}">
-                    <x-icon name="coins" size="4" />
-                    {{ $discounted ? 'Discounted' : 'Discount' }}
-                </button>
-            </div>
-
-            {{-- Folded away until asked for, so a plain line stays readable. --}}
-            <form data-id="{{ $item['product_id'] }}" class="line-discount-form mt-2 flex items-center gap-1.5"
-                  x-show="showDiscount" x-cloak>
-                <input type="number" name="value" step="0.01" min="0" placeholder="0" inputmode="decimal"
-                       value="{{ $item['discount_value'] }}" aria-label="Discount for {{ $item['name'] }}"
-                       class="w-20 {{ $small }}">
-                <select name="type" aria-label="Discount type" class="{{ $small }}">
-                    <option value="percent" @selected(($item['discount_type'] ?? 'percent') === 'percent')>%</option>
-                    <option value="fixed" @selected(($item['discount_type'] ?? null) === 'fixed')>{{ currency() }}</option>
-                </select>
-                <button type="submit" class="{{ $chip }}">Apply</button>
-                <button type="button" data-clear-discount
-                        class="min-h-touch px-2 text-xs text-gray-500 hover:underline dark:text-gray-400">Off</button>
-            </form>
-        </div>
+        @include('pos.cart-line', ['item' => $item])
     @empty
-        <div class="rounded-lg border border-dashed border-gray-300 p-6 text-center dark:border-gray-600">
+        <div class="rounded-lg border border-dashed border-gray-300 p-6 text-center dark:border-gray-600" data-cart-empty>
             <p class="text-gray-500 dark:text-gray-400">Nothing in this {{ strtolower(term('sale')) }} yet.</p>
             <p class="mt-1 text-xs text-gray-400 dark:text-gray-500">Scan a barcode, or tap an item.</p>
         </div>
@@ -325,27 +248,27 @@
     {{-- Totals, exactly as checkout will recompute them. --}}
     <div class="mt-3 space-y-1 border-t border-gray-200 pt-3 text-sm dark:border-gray-700">
         <p class="flex justify-between text-gray-600 dark:text-gray-300">
-            <span>Subtotal</span><span>{{ money($totals['subtotal']) }}</span>
+            <span>Subtotal</span><span data-total="subtotal">{{ money($totals['subtotal']) }}</span>
         </p>
         @if ($totals['discount_total'] > 0)
             <p class="flex justify-between text-green-600 dark:text-green-400">
-                <span>Discount</span><span>− {{ money($totals['discount_total']) }}</span>
+                <span>Discount</span><span>− <span data-total="discount">{{ money($totals['discount_total']) }}</span></span>
             </p>
         @endif
         @if ($totals['tax_rate'] > 0)
             <p class="flex justify-between text-gray-600 dark:text-gray-300">
-                <span>Tax ({{ $tidy($totals['tax_rate']) }}%)</span><span>{{ money($totals['tax']) }}</span>
+                <span>Tax ({{ $tidy($totals['tax_rate']) }}%)</span><span data-total="tax">{{ money($totals['tax']) }}</span>
             </p>
         @endif
         @if ($serviceCharge['amount'] > 0)
             {{-- A tip or service charge, on top of the bill including tax. --}}
             <p class="flex justify-between text-gray-600 dark:text-gray-300">
-                <span>{{ $serviceCharge['label'] }}</span><span>{{ money($serviceCharge['amount']) }}</span>
+                <span>{{ $serviceCharge['label'] }}</span><span data-total="service">{{ money($serviceCharge['amount']) }}</span>
             </p>
         @endif
         <p class="flex items-baseline justify-between pt-1 text-gray-900 dark:text-gray-100">
             <span class="text-base font-semibold">Total</span>
-            <span class="text-2xl font-bold">{{ money($charged) }}</span>
+            <span class="text-2xl font-bold" data-total="grand">{{ money($charged) }}</span>
         </p>
     </div>
 

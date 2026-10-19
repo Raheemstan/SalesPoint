@@ -23,24 +23,38 @@
     @endphp
 
     {{--
-        Offline state, held sales and refusals. Rendered above everything else
-        on purpose: a cashier has to know whether the till has a line *before*
-        they start ringing something up, and a refused offline sale has to be
-        the first thing on the screen.
+        Two panes that scroll on their own.
+
+        <main> (the app shell) is what normally scrolls. Here the page fills it exactly and the
+        two columns scroll inside it, so wheeling through a long product list never drags the
+        sale along, and a long sale never pushes the catalogue off screen.
+
+        Only from `lg` up, where the columns sit side by side. Below that they stack, and a
+        stacked page is one that has to scroll as a whole.
     --}}
-    @include('pos.offline')
+    <div class="flex flex-col lg:h-full lg:min-h-0">
 
-    {{-- Renders nothing when a shift is open; looks the shift up itself. --}}
-    <div class="mb-4">
-        @include('shifts.partials.no-open-shift', ['openShift' => $openShift])
-    </div>
+        {{--
+            Offline state, held sales and refusals. Rendered above everything else
+            on purpose: a cashier has to know whether the till has a line *before*
+            they start ringing something up, and a refused offline sale has to be
+            the first thing on the screen.
+        --}}
+        <div class="shrink-0">
+            @include('pos.offline')
+        </div>
 
-    <div class="grid grid-cols-1 gap-4 lg:grid-cols-5">
+        {{-- Renders nothing when a shift is open; looks the shift up itself. --}}
+        <div class="mb-4 shrink-0 empty:mb-0">
+            @include('shifts.partials.no-open-shift', ['openShift' => $openShift])
+        </div>
 
-        {{-- Catalogue --}}
-        <div class="lg:col-span-3">
-            <x-card>
-                <div class="flex flex-wrap items-center justify-between gap-2">
+        <div class="grid grid-cols-1 gap-4 lg:min-h-0 lg:flex-1 lg:grid-cols-5 lg:grid-rows-[minmax(0,1fr)]">
+
+            {{-- Catalogue: the header and search stay put, only the grid of products scrolls. --}}
+            <section class="flex min-h-0 flex-col rounded-xl bg-white p-4 shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700 sm:p-5 lg:col-span-3"
+                     aria-label="{{ term('product', true) }}">
+                <div class="flex shrink-0 flex-wrap items-center justify-between gap-2">
                     <h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100">
                         {{ term('product', true) }}
                     </h2>
@@ -67,7 +81,7 @@
                     One box for both jobs: type a few letters to filter, or let the
                     scanner type a whole code and press Enter to add it outright.
                 --}}
-                <div class="relative mt-3">
+                <div class="relative mt-3 shrink-0">
                     <span class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
                         <x-icon name="search" size="5" />
                     </span>
@@ -79,26 +93,66 @@
                                   dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:focus:ring-primary-900">
                 </div>
 
-                <p class="mt-1.5 text-xs text-gray-400 dark:text-gray-500">
-                    Enter adds the exact barcode. F2 comes back here.
+                <p class="mt-1.5 shrink-0 text-xs text-gray-400 dark:text-gray-500">
+                    Pick an item, type its quantity and press Enter. Arrow keys move through the list; F2 comes back here.
                 </p>
 
-                <div id="product-list" class="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
+                {{-- The only part of this column that scrolls. Capped on a stacked screen so the sale is never pages away. --}}
+                <div id="product-list"
+                     class="mt-3 grid max-h-[55vh] grid-cols-2 content-start gap-2 overflow-y-auto overscroll-contain pr-1 sm:grid-cols-3 lg:max-h-none lg:min-h-0 lg:flex-1 xl:grid-cols-4">
                     @foreach($products as $product)
                         @include('pos.product-card', ['product' => $product])
                     @endforeach
                 </div>
-            </x-card>
-        </div>
+            </section>
 
-        {{-- Cart. Sticky on a wide screen so the total stays in view while scrolling the grid. --}}
-        <div class="lg:col-span-2">
-            <div id="cart-section"
-                 class="rounded-xl bg-white p-4 shadow-sm ring-1 ring-gray-200 lg:sticky lg:top-0 dark:bg-gray-800 dark:ring-gray-700">
-                @include('pos.cart')
+            {{-- The sale: its own scroll, so a long sale and the payment panel beneath it stay reachable. --}}
+            <div class="min-h-0 lg:col-span-2 lg:overflow-y-auto lg:overscroll-contain">
+                <div id="cart-section"
+                     class="rounded-xl bg-white p-4 shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
+                    @include('pos.cart')
+                </div>
             </div>
         </div>
     </div>
+
+    {{--
+        What the browser clones to show a line the moment a product is tapped, before the server
+        has answered. It is the real cart-line partial with placeholders, so it cannot drift from
+        the lines the server renders. Never displayed itself: it lives in a <template>.
+    --}}
+    <template id="cart-line-template">
+        @include('pos.cart-line', ['item' => [
+            'product_id' => '__ID__',
+            'name' => '__NAME__',
+            'price' => 0,
+            'quantity' => 1,
+            'stock' => 0,
+            'tracks_stock' => false,
+            'discount_type' => null,
+            'discount_value' => null,
+            'calc' => ['line_discount' => 0, 'paid_total' => 0],
+        ]])
+    </template>
+
+    {{--
+        Everything the till script needs from the server. No URL is spelled out by hand in the
+        script and no currency symbol is hardcoded. JSON in a script tag, escaped so a store or
+        product name can never break out of it.
+    --}}
+    <script type="application/json" id="till-config">{!! json_encode([
+        'pos' => url('/pos'),
+        'cartUrl' => route('pos.index'),
+        'searchUrl' => route('pos.search'),
+        'scanUrl' => route('pos.scan'),
+        'symbol' => currency(),
+        'decimals' => (int) setting('currency_decimals', config('sectors.currency.decimals')),
+        'lowStockOn' => setting('enable_low_stock_warning') === '1',
+        'lowStockLimit' => (int) setting('low_stock_threshold', 5),
+        'serviceLabel' => term('service', false, 'Service'),
+        'noMatches' => 'No ' . strtolower(term('product', true)) . ' match that.',
+        'catalogueComplete' => (bool) $catalogueComplete,
+    ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) !!}</script>
 
     {{-- Shortcut cheat sheet. Opened with F1 or the button above. --}}
     <div x-data="{ open: false }" @till-help.window="open = !open" @keydown.escape.window="open = false">
@@ -117,13 +171,14 @@
 
                 <dl class="mt-3 divide-y divide-gray-200 text-sm dark:divide-gray-700">
                     @foreach ([
-                        'Enter' => 'Add the scanned barcode',
+                        'Enter' => 'Add the item; in a quantity box, confirm it and return to search',
+                        '↑ ↓' => 'Move through the search results',
+                        'Esc' => 'Empty the search box (or undo a quantity edit)',
                         'F2' => 'Back to the scan / search box',
                         'F4' => 'Hold this ' . strtolower(term('sale')),
                         'F8' => 'Clear the ' . strtolower(term('sale')),
                         'F9' => 'Take payment',
                         'F1' => 'This list',
-                        'Esc' => 'Empty the search box',
                     ] as $key => $what)
                         <div class="flex items-center justify-between gap-3 py-2">
                             <dt>
@@ -136,405 +191,4 @@
             </div>
         </div>
     </div>
-@endsection
-
-@section('scripts')
-    <script>
-        document.addEventListener('DOMContentLoaded', function () {
-            const search = document.getElementById('product-search');
-            const grid = document.getElementById('product-list');
-            const cartSection = document.getElementById('cart-section');
-            const token = document.querySelector('meta[name=csrf-token]').content;
-
-            // Everything the server knows that this script needs. No URL is spelled
-            // out by hand and no currency symbol is hardcoded.
-            const pos = @js(url('/pos'));
-            const cartUrl = @js(route('pos.index'));
-            const searchUrl = @js(route('pos.search'));
-            const scanUrl = @js(route('pos.scan'));
-            const symbol = @js(currency());
-            const decimals = @js((int) setting('currency_decimals', config('sectors.currency.decimals')));
-            const lowStockOn = @js(setting('enable_low_stock_warning') === '1');
-            const lowStockLimit = @js((int) setting('low_stock_threshold', 5));
-            const serviceLabel = @js(term('service', false, 'Service'));
-            const noMatches = @js('No ' . strtolower(term('product', true)) . ' match that.');
-
-            // The grid as the server first rendered it, so emptying the search box
-            // is instant rather than another round trip.
-            const initialGrid = grid.innerHTML;
-
-            // Names and SKUs are typed by people; never put one in innerHTML raw.
-            const esc = (v) => String(v ?? '').replace(/[&<>"']/g, c => ({
-                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
-            }[c]));
-
-            const fmt = (v) => symbol + Number(v).toLocaleString(undefined, {
-                minimumFractionDigits: decimals, maximumFractionDigits: decimals,
-            });
-
-            const debounce = (fn, ms = 250) => {
-                let timer;
-                return (...args) => { clearTimeout(timer); timer = setTimeout(() => fn(...args), ms); };
-            };
-
-            /*
-            |------------------------------------------------------------------
-            | Scanner feedback
-            |------------------------------------------------------------------
-            |
-            | A cashier scanning a trolley is looking at the goods, not the
-            | screen, so the till has to answer with a sound: a short high blip
-            | for a hit, two low notes for a code it does not know. Generated
-            | with the Web Audio API rather than shipped as a file - a till
-            | should not need a download to say "yes".
-            |
-            | Wrapped in try/catch throughout: a machine with no sound device,
-            | or a browser that has not had a user gesture yet, must still sell.
-            */
-            let audio = null;
-
-            function tone(frequency, ms, afterMs = 0) {
-                try {
-                    const Ctx = window.AudioContext || window.webkitAudioContext;
-                    if (!Ctx) return;
-
-                    audio = audio || new Ctx();
-                    const at = audio.currentTime + afterMs / 1000;
-
-                    const osc = audio.createOscillator();
-                    const gain = audio.createGain();
-
-                    osc.type = 'square';
-                    osc.frequency.value = frequency;
-
-                    // A flat square wave clicks on stop; fade it instead.
-                    gain.gain.setValueAtTime(0.06, at);
-                    gain.gain.exponentialRampToValueAtTime(0.0001, at + ms / 1000);
-
-                    osc.connect(gain).connect(audio.destination);
-                    osc.start(at);
-                    osc.stop(at + ms / 1000);
-                } catch (e) {
-                    /* no audio: the toast still says what happened */
-                }
-            }
-
-            const beepFound = () => tone(1760, 70);
-            const beepUnknown = () => { tone(360, 130); tone(240, 200, 150); };
-
-            function focusSearch() {
-                search.focus();
-                search.select();
-            }
-
-            /*
-            |------------------------------------------------------------------
-            | Talking to the server
-            |------------------------------------------------------------------
-            */
-            async function tillPost(url, body) {
-                let data = {};
-
-                try {
-                    const res = await fetch(url, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Accept': 'application/json',
-                            'X-CSRF-TOKEN': token,
-                        },
-                        body: JSON.stringify(body || {}),
-                    });
-
-                    data = await res.json().catch(() => ({}));
-
-                    if (!res.ok) {
-                        window.toast(data.message || 'That did not work.', { variant: 'error' });
-                        return data;
-                    }
-                } catch (e) {
-                    window.toast('The till could not reach the server.', { variant: 'error' });
-                    return data;
-                }
-
-                await reloadCart();
-                return data;
-            }
-
-            // Re-render the cart panel from the server, which is the only thing that
-            // knows what the sale now comes to.
-            async function reloadCart(refocus = true) {
-                try {
-                    const res = await fetch(cartUrl, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
-                    cartSection.innerHTML = await res.text();
-                } catch (e) {
-                    window.toast('Could not refresh the cart.', { variant: 'error' });
-                    return;
-                }
-
-                // Alpine picks up the new x-data trees on its own.
-                if (refocus) focusSearch();
-
-                /*
-                 * The cart panel carries the snapshot a sale is queued from when
-                 * the line drops (resources/js/offline), so the offline code has
-                 * to re-read it every time this replaces the panel.
-                 */
-                window.dispatchEvent(new CustomEvent('salespoint:cart-rendered'));
-            }
-
-            // The cart partial's Alpine components use these.
-            window.reloadCart = reloadCart;
-            window.tillPost = tillPost;
-
-            /*
-            |------------------------------------------------------------------
-            | Scanning
-            |------------------------------------------------------------------
-            */
-            async function scan() {
-                const code = search.value.trim();
-
-                if (code === '') return;
-
-                const res = await fetch(scanUrl, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Accept': 'application/json',
-                        'X-CSRF-TOKEN': token,
-                    },
-                    body: JSON.stringify({ code }),
-                }).catch(() => null);
-
-                if (!res) {
-                    beepUnknown();
-                    window.toast('The till could not reach the server.', { variant: 'error' });
-                    return;
-                }
-
-                const data = await res.json().catch(() => ({}));
-
-                if (data.found && data.success) {
-                    beepFound();
-                    search.value = '';
-                    grid.innerHTML = initialGrid;
-                    await reloadCart();
-                    return;
-                }
-
-                // Known code, but it cannot be sold (out of stock): keep the code on
-                // screen, because the cashier will want to look at it.
-                beepUnknown();
-                window.toast(data.message || 'Could not scan that code.',
-                    { variant: data.found ? 'error' : 'warning' });
-
-                if (!data.found) {
-                    // Nothing matched exactly, so show what nearly did rather than
-                    // leaving the cashier wondering if the scanner is broken.
-                    renderProducts(data.matches || []);
-                    search.select();
-                }
-            }
-
-            async function runSearch() {
-                const query = search.value.trim();
-
-                if (query === '') {
-                    grid.innerHTML = initialGrid;
-                    return;
-                }
-
-                try {
-                    const res = await fetch(`${searchUrl}?q=${encodeURIComponent(query)}`,
-                        { headers: { 'Accept': 'application/json' } });
-                    renderProducts(res.ok ? await res.json() : []);
-                } catch (e) {
-                    /* a failed filter is not worth a toast; the grid simply does not change */
-                }
-            }
-
-            function renderProducts(products) {
-                if (!products.length) {
-                    grid.innerHTML = `<p class="col-span-full py-6 text-center text-gray-500 dark:text-gray-400">${esc(noMatches)}</p>`;
-                    return;
-                }
-
-                grid.innerHTML = products.map(product => {
-                    // A service has no stock level, so it shows no figure and no warning.
-                    const tracks = !!product.track_stock && !product.is_service;
-                    const stock = Number(product.stock_quantity);
-                    const soldOut = tracks && stock <= 0;
-                    const low = tracks && lowStockOn && stock <= lowStockLimit;
-
-                    const note = !tracks
-                        ? `<span class="text-xs text-gray-400 dark:text-gray-500">${esc(serviceLabel)}</span>`
-                        : `<span class="text-xs text-gray-500 dark:text-gray-400">${soldOut ? 'Sold out' : esc(stock) + ' in stock'}`
-                          + `${low && !soldOut ? ' <span class="font-semibold text-amber-600 dark:text-amber-400">(low)</span>' : ''}</span>`;
-
-                    return `
-                        <form method="POST" action="${pos}/add/${esc(product.id)}" class="add-to-cart-form" data-id="${esc(product.id)}">
-                            <input type="hidden" name="_token" value="${esc(token)}">
-                            <button type="submit" ${soldOut ? 'disabled' : ''}
-                                    class="flex h-full min-h-touch w-full flex-col items-start gap-1 rounded-xl border border-gray-200 bg-white p-3
-                                           text-left transition hover:border-primary-400 hover:bg-primary-50 active:scale-[0.98]
-                                           disabled:cursor-not-allowed disabled:opacity-50
-                                           dark:border-gray-600 dark:bg-gray-700 dark:hover:border-primary-500 dark:hover:bg-gray-600">
-                                <span class="line-clamp-2 font-semibold leading-snug text-gray-800 dark:text-gray-100">${esc(product.name)}</span>
-                                <span class="text-base font-bold text-primary-700 dark:text-primary-300">${esc(fmt(product.sale_price))}</span>
-                                ${note}
-                            </button>
-                        </form>`;
-                }).join('');
-            }
-
-            search.addEventListener('keydown', function (event) {
-                if (event.key === 'Enter') {
-                    // Never submit a form or open a picker: add the exact code.
-                    event.preventDefault();
-                    scan();
-                }
-            });
-
-            search.addEventListener('input', debounce(runSearch, 250));
-
-            /*
-            |------------------------------------------------------------------
-            | Cart actions
-            |------------------------------------------------------------------
-            |
-            | Delegated from the document, so the cart panel can be replaced
-            | wholesale by reloadCart() without anything needing to be rebound.
-            | The checkout and hold forms are deliberately not listed: those are
-            | ordinary posts that navigate.
-            */
-            function sendDiscount(form, url, override) {
-                return tillPost(url, override || {
-                    type: form.querySelector('[name=type]').value,
-                    value: form.querySelector('[name=value]').value || 0,
-                });
-            }
-
-            function updateQuantity(form) {
-                return tillPost(`${pos}/update/${form.dataset.id}`, {
-                    quantity: form.querySelector('[name=quantity]').value,
-                });
-            }
-
-            document.addEventListener('submit', function (event) {
-                const form = event.target;
-
-                if (form.matches('.add-to-cart-form')) {
-                    event.preventDefault();
-                    tillPost(`${pos}/add/${form.dataset.id}`).then(data => {
-                        if (data && data.success) beepFound();
-                    });
-                } else if (form.matches('.update-cart-form')) {
-                    event.preventDefault();
-                    updateQuantity(form);
-                } else if (form.matches('.remove-cart-form')) {
-                    event.preventDefault();
-                    tillPost(`${pos}/remove/${form.dataset.id}`);
-                } else if (form.matches('.line-discount-form')) {
-                    event.preventDefault();
-                    sendDiscount(form, `${pos}/discount/${form.dataset.id}`);
-                } else if (form.matches('.order-discount-form')) {
-                    event.preventDefault();
-                    sendDiscount(form, `${pos}/discount`);
-                } else if (form.matches('.clear-cart-form')) {
-                    event.preventDefault();
-                    tillPost(`${pos}/clear`);
-                }
-            });
-
-            document.addEventListener('click', function (event) {
-                const stepper = event.target.closest('[data-step]');
-
-                if (stepper) {
-                    const form = stepper.closest('.update-cart-form');
-                    const input = form.querySelector('[name=quantity]');
-                    const step = parseInt(stepper.dataset.step, 10);
-
-                    input.value = Math.max(1, (parseInt(input.value, 10) || 1) + step);
-                    updateQuantity(form);
-                    return;
-                }
-
-                const off = event.target.closest('[data-clear-discount]');
-
-                if (off) {
-                    const form = off.closest('.line-discount-form');
-                    sendDiscount(form, `${pos}/discount/${form.dataset.id}`, { type: 'none', value: 0 });
-                }
-            });
-
-            /*
-            |------------------------------------------------------------------
-            | Keyboard
-            |------------------------------------------------------------------
-            |
-            | Function keys on purpose: they do not type a character, so they
-            | work from inside the amount box as well as from the grid, and they
-            | are what a cashier moving from another till already expects.
-            | The on-screen list is the cheat sheet (F1).
-            */
-            function submitTillForm(id, refusal) {
-                const form = document.getElementById(id);
-
-                if (!form) {
-                    window.toast(refusal, { variant: 'warning' });
-                    return;
-                }
-
-                const button = form.querySelector('button[type=submit]');
-
-                if (button && button.disabled) {
-                    window.toast(refusal, { variant: 'warning' });
-                    return;
-                }
-
-                form.requestSubmit(button || undefined);
-            }
-
-            window.addEventListener('keydown', function (event) {
-                if (event.ctrlKey || event.altKey || event.metaKey) return;
-
-                switch (event.key) {
-                    case 'F1':
-                        event.preventDefault();
-                        window.dispatchEvent(new CustomEvent('till-help'));
-                        break;
-
-                    case 'F2':
-                        event.preventDefault();
-                        focusSearch();
-                        break;
-
-                    case 'F4':
-                        event.preventDefault();
-                        submitTillForm('park-form', 'There is nothing to hold.');
-                        break;
-
-                    case 'F8':
-                        event.preventDefault();
-                        document.querySelector('.clear-cart-form')?.requestSubmit();
-                        break;
-
-                    case 'F9':
-                        event.preventDefault();
-                        submitTillForm('checkout-form', 'This sale cannot be taken yet.');
-                        break;
-
-                    case 'Escape':
-                        if (document.activeElement === search && search.value !== '') {
-                            search.value = '';
-                            grid.innerHTML = initialGrid;
-                        }
-                        break;
-                }
-            });
-
-            focusSearch();
-        });
-    </script>
 @endsection

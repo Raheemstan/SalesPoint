@@ -13,8 +13,20 @@
     $soldOut = $tracksStock && (int) $product->stock_quantity <= 0;
 @endphp
 
+{{--
+    The data-* attributes are what lets the till search this grid and add a line without a
+    round trip: when the whole catalogue is on the page, typing in the search box only hides
+    cards, and a tap shows the new line before the server has answered.
+--}}
 <form method="POST" action="{{ route('pos.add', $product->id) }}" class="add-to-cart-form"
-      data-id="{{ $product->id }}">
+      data-id="{{ $product->id }}"
+      data-name="{{ $product->name }}"
+      data-price="{{ (float) $product->sale_price }}"
+      data-stock="{{ (int) $product->stock_quantity }}"
+      data-tracks="{{ $tracksStock ? 1 : 0 }}"
+      data-sku="{{ $product->sku }}"
+      data-barcode="{{ $product->barcode }}"
+      data-search="{{ mb_strtolower(trim($product->name . ' ' . $product->sku . ' ' . $product->barcode)) }}">
     @csrf
     <button type="submit" @disabled($soldOut)
             class="flex h-full min-h-touch w-full flex-col items-start gap-1 rounded-xl border border-gray-200 bg-white p-3

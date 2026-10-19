@@ -12,6 +12,7 @@ import searchableSelect from './alpine/searchable-select';
 import toastStack from './alpine/toast-stack';
 import offlineQueue, { startOfflineQueue } from './offline';
 import { toast } from './toast';
+import { startTill } from './pos/till';
 
 // x-collapse animates the nav groups open and closed by height.
 Alpine.plugin(collapse);
@@ -42,3 +43,10 @@ Alpine.start();
 | till (it keys off an element only the POS screen renders).
 */
 startOfflineQueue();
+
+/*
+| The point-of-sale screen: searching, scanning, the cart and the keyboard flow. A no-op on every
+| page that is not the till (it keys off <script id="till-config">, which only the POS page renders).
+| Started after the offline queue so that, on the checkout form, the offline interceptor runs first.
+*/
+startTill();
