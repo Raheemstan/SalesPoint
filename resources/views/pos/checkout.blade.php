@@ -273,7 +273,10 @@
     {{-- Footer --}}
     <div class="center">
         <div>{{ $footer ?: 'Thank you for your purchase!' }}</div>
-        <div class="muted" style="margin-top: 4px;">Powered by <strong>SalesPoint</strong></div>
+        <div class="muted" style="margin-top: 4px;">
+            Powered by <strong>SalesPoint</strong>
+            <main class="muted" style="font-size: 0.8em;">09071140264</main>
+        </div>
     </div>
 
 </body>
