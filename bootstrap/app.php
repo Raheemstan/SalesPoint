@@ -11,6 +11,15 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        /*
+         * Pilot lock. Prepended to the very front of the GLOBAL stack (not just the
+         * 'web' group) so it runs before session, CSRF and auth - an expired pilot
+         * blocks literally every request, including the login page and the API,
+         * not just the screens behind a session. A no-op (single config() read)
+         * on any install that doesn't have PILOT_MODE=true.
+         */
+        $middleware->prepend(\App\Http\Middleware\EnforcePilotLock::class);
+
         // Spatie Laravel-Permission middleware aliases. Without these,
         // `role:admin|manager` on a route throws "Target class [role] does not exist".
         $middleware->alias([

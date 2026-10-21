@@ -90,6 +90,7 @@
 </head>
 
 <body class="h-full bg-gray-100 text-gray-800 antialiased dark:bg-gray-900 dark:text-gray-100">
+    @include('pilot._warning_banner')
 
 {{-- First stop for a keyboard or screen-reader user: skip the nav. --}}
 <a href="#main-content"
